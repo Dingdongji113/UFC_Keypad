@@ -50,7 +50,7 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 | `input.py`     | 原生触控钩子 + 键位注入 (SendInput/PostMessage) |
 | `widgets.py`   | `UFCCell` / `UFCBlank` 自定义控件 |
 | `ui.py`        | `UFCKeypadWindow` 主面板 + `SettingsWindow` 设置窗口 |
-| `app.py`       | (见仓库根 `main.py`) 入口 |
+| `main.py`      | 仓库根目录入口，创建 QApplication 与主窗口 |
 
 ## 依赖
 - Python 3.10+
