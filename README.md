@@ -8,8 +8,17 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **MORSE LIGHT**：字母+小键盘，输入文本经编队灯输出莫尔斯码
 - **LIGHT CONTROL**：着陆/滑行灯、编队灯、航线灯、频闪灯手动控制 + 预设
 - **SYSTEM SELECT**：页面切换中枢
-- DCS-BIOS 双向同步（UDP 导入 7778 / 接收 37778），亮度随座舱旋钮联动
+- DCS-BIOS 双向同步：接收 `239.255.50.10:5010/UDP`，发送 `127.0.0.1:7778/UDP`
 - Windows 原生触控隔离（WH_MOUSE_LL 钩子 + RegisterTouchWindow）
+
+## DCS-BIOS 通信端口
+
+当前端口说明以源码 `ufc/dcs_bios.py` 为准：
+
+| 方向 | 地址 / 端口 | 用途 |
+|------|-------------|------|
+| DCS → UFC Keypad | `239.255.50.10:5010/UDP` | 接收 DCS-BIOS Skunkworks 组播导出的座舱状态数据 |
+| UFC Keypad → DCS | `127.0.0.1:7778/UDP` | 发送 DCS-BIOS 控制命令 |
 
 ## 运行
 ```bash
