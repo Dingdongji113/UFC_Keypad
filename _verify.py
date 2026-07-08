@@ -86,7 +86,7 @@ print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 # 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
-# 这里模拟鼠标 press/release，确保不会再出现 NameError，且 press/release 命令被正确调用。
+# 这里模拟正常鼠标 press/release，确保不会再出现 NameError，且 press 命令被正确调用。
 import ufc.widgets as W
 sent = []
 _orig_send = W.send_dcs_bios
@@ -94,7 +94,7 @@ _orig_release = W._send_release
 try:
     W.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
     W._send_release = lambda identifier: sent.append((identifier, 0)) or True
-    cell = W.UFCCell("1", (1, 1), no_feedback=True)
+    cell = W.UFCCell("1", (1, 1), no_feedback=False)
     press = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         QPointF(5, 5), QPointF(5, 5), QPointF(5, 5),
