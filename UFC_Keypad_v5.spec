@@ -25,6 +25,7 @@ a = Analysis(
         'ufc.input',
         'ufc.widgets',
         'ufc.startup',
+        'ufc.windowing',
         'ufc.ui',
     ],
     hookspath=[],
