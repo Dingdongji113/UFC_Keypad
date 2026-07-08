@@ -31,7 +31,7 @@ python main.py
 
 ## 启动动画设置
 
-在设置面板中可选择启动动画风格，配置会保存到 `ufc_config.json`：
+在设置面板中可选择启动动画风格。切换后会立即替换当前启动覆盖层，并保存到 `ufc_config.json` 作为下次启动默认值：
 
 ```json
 {
@@ -45,8 +45,6 @@ python main.py
 |----|----------|
 | `ufc_bit` | UFC BIT（军机自检风格） |
 | `anime_millennium_jp` | 千禧日式动画风格 |
-
-> 该设置下次启动生效。
 
 ## 打包 (PyInstaller, 单文件无控制台)
 ```bash
