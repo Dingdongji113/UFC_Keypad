@@ -85,7 +85,24 @@ class StartupOverlayBase(QWidget):
             self.update()
 
     def _finish(self):
+        """结束覆盖层。
+
+        重要：收到首个 DCS 信号后 overlay 会自行结束；此时必须清理 key_panel 上的
+        _startup_overlay 引用，否则后续在设置窗口切换风格时可能访问到已删除的 Qt 对象。
+        """
+        if self._finished:
+            return
         self._finished = True
+
+        parent = self.parentWidget()
+        if parent is not None:
+            try:
+                parent._dcs_signal.disconnect(self.on_dcs_signal)
+            except Exception:
+                pass
+            if getattr(parent, "_startup_overlay", None) is self:
+                parent._startup_overlay = None
+
         self.hide()
         if self._timer.isActive():
             self._timer.stop()
@@ -324,6 +341,8 @@ def install_startup_overlay(key_panel, style_name=None):
                 old_overlay.deleteLater()
             except Exception:
                 pass
+        if getattr(key_panel, "_startup_overlay", None) is old_overlay:
+            key_panel._startup_overlay = None
 
     overlay = create_startup_overlay(style_name, key_panel)
     key_panel._dcs_signal.connect(overlay.on_dcs_signal)
