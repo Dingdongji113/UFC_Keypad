@@ -24,6 +24,7 @@ a = Analysis(
         'ufc.dcs_bios',
         'ufc.input',
         'ufc.widgets',
+        'ufc.startup',
         'ufc.ui',
     ],
     hookspath=[],
