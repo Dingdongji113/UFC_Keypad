@@ -11,6 +11,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from ufc.crashlog import setup_crash_log
+from ufc.startup import UFCStartupOverlay
 from ufc.ui import UFCKeypadWindow, SettingsWindow
 
 
@@ -20,6 +21,8 @@ def main():
     app.setStyle("Fusion")
 
     key_panel = UFCKeypadWindow()
+    startup_overlay = UFCStartupOverlay(key_panel)
+    key_panel._dcs_signal.connect(startup_overlay.on_dcs_signal)
     key_panel.hide()
 
     settings = SettingsWindow(key_panel)
