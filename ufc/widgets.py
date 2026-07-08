@@ -16,6 +16,7 @@ from ufc.colors import (text_color_br, border_color_br, _dim,
                         TEXT_COLOR, BORDER_COLOR, HOVER_BG, PRESSED_BG)
 from ufc.fonts import get_hornet_font
 from ufc.constants import BG_COLOR, WIN_W, WIN_H
+from ufc.dcs_bios import UFC_BIOS_MAP, _MIN_PRESS_MS, _send_release, send_dcs_bios
 
 class UFCCell(QFrame):
     """UFC 按钮单元格 - 有边框可点击"""
@@ -276,5 +277,3 @@ class UFCBlank(QFrame):
             self.setStyleSheet(f"background-color: {BG_COLOR}; border: 2px solid {border_color_br()};")
         else:
             self.setStyleSheet(f"background-color: {BG_COLOR}; border: none;")
-
-
