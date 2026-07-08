@@ -34,12 +34,11 @@ from ufc.startup import (
     AnimeMillenniumStartupOverlay,
     UFCBitStartupOverlay,
     attach_startup_style_settings,
-    create_startup_overlay,
+    install_startup_overlay,
 )
 w = UFCKeypadWindow()
-startup = create_startup_overlay(STARTUP_STYLE_UFC_BIT, w)
+startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
 assert isinstance(startup, UFCBitStartupOverlay)
-w._dcs_signal.connect(startup.on_dcs_signal)
 s = SettingsWindow(w)
 combo = attach_startup_style_settings(s)
 assert combo is not None
@@ -53,12 +52,16 @@ startup.update()
 app.processEvents()
 startup.on_dcs_signal("ufc_brightness", "0.5")
 app.processEvents()
-anime = create_startup_overlay(STARTUP_STYLE_ANIME_MILLENNIUM, w)
+anime = install_startup_overlay(w, STARTUP_STYLE_ANIME_MILLENNIUM)
 assert isinstance(anime, AnimeMillenniumStartupOverlay)
+assert w._startup_overlay is anime
 anime.update()
 app.processEvents()
 anime.on_dcs_signal("ufc_brightness", "0.5")
 app.processEvents()
+bit = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
+assert isinstance(bit, UFCBitStartupOverlay)
+assert w._startup_overlay is bit
 for p in ["morse_light", "light_control", "select", "local_icp"]:
     w._show_page(p)
     app.processEvents()
