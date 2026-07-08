@@ -65,6 +65,10 @@ def main():
     _safe_log(f"CWD: {os.getcwd()}")
 
     try:
+        from _bootstrap_imports import ensure_ufc_package
+        pkg_dir = ensure_ufc_package(os.path.dirname(os.path.abspath(__file__)))
+        _safe_log(f"ufc package dir: {pkg_dir}")
+
         from ufc.crashlog import setup_crash_log, _crash_log
         setup_crash_log()
         _crash_log("main_safe.py formal crash log active")
