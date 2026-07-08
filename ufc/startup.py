@@ -87,6 +87,8 @@ class StartupOverlayBase(QWidget):
     def _finish(self):
         self._finished = True
         self.hide()
+        if self._timer.isActive():
+            self._timer.stop()
         self.deleteLater()
 
     def _scale(self):
@@ -205,7 +207,6 @@ class AnimeMillenniumStartupOverlay(StartupOverlayBase):
         bg = QColor(3, 6, 20)
         p.fillRect(self.rect(), bg)
 
-        # 低强度扫描线，保留千禧年代低分辨率屏幕质感。
         scan_color = QColor(30, 230, 210, 20)
         p.setPen(QPen(scan_color, max(1, rh(1))))
         step = max(4, rh(6))
@@ -227,7 +228,6 @@ class AnimeMillenniumStartupOverlay(StartupOverlayBase):
         jp_font = QFont("MS Gothic", max(9, int(18 * s)))
         small_font = QFont("Consolas", max(8, int(14 * s)))
 
-        # 外框和 HUD 角标。
         p.setPen(QPen(dim_cyan, max(1, rw(1))))
         p.drawRect(QRect(rx(96), ry(58), rw(832), rh(484)))
         p.drawLine(rx(96), ry(116), rx(928), ry(116))
@@ -306,6 +306,32 @@ def create_startup_overlay(style_name, parent=None):
     return UFCBitStartupOverlay(parent)
 
 
+def install_startup_overlay(key_panel, style_name=None):
+    """安装或替换当前启动动画覆盖层，并统一管理 DCS 信号连接。"""
+    style_name = normalize_startup_style(style_name or get_configured_startup_style())
+
+    old_overlay = getattr(key_panel, "_startup_overlay", None)
+    if old_overlay is not None:
+        try:
+            key_panel._dcs_signal.disconnect(old_overlay.on_dcs_signal)
+        except Exception:
+            pass
+        try:
+            old_overlay._finish()
+        except Exception:
+            try:
+                old_overlay.hide()
+                old_overlay.deleteLater()
+            except Exception:
+                pass
+
+    overlay = create_startup_overlay(style_name, key_panel)
+    key_panel._dcs_signal.connect(overlay.on_dcs_signal)
+    key_panel._startup_overlay = overlay
+    key_panel._startup_style = style_name
+    return overlay
+
+
 def attach_startup_style_settings(settings_window):
     """给现有 SettingsWindow 动态添加启动动画选择项，不侵入 ui.py 主体。"""
     layout = settings_window.layout()
@@ -327,7 +353,7 @@ def attach_startup_style_settings(settings_window):
         combo.setCurrentIndex(idx)
     row.addWidget(combo)
 
-    hint = QLabel("下次启动生效")
+    hint = QLabel("切换后立即预览，并保存为下次启动默认")
     hint.setStyleSheet("color: #8888aa; font-size: 11px;")
     row.addWidget(hint)
     row.addStretch()
@@ -337,8 +363,15 @@ def attach_startup_style_settings(settings_window):
         cfg = load_config()
         cfg["startup_style"] = style
         save_config(cfg)
+
+        key_panel = getattr(settings_window, "key_panel", None)
+        if key_panel is not None:
+            install_startup_overlay(key_panel, style)
+            if key_panel.isVisible():
+                key_panel.raise_()
+
         if hasattr(settings_window, "status_label"):
-            settings_window.status_label.setText(f"启动动画已设置为: {combo.currentText()}（下次启动生效）")
+            settings_window.status_label.setText(f"启动动画已切换为: {combo.currentText()}（已立即替换并保存）")
 
     combo.currentIndexChanged.connect(_on_changed)
 
