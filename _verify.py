@@ -3,17 +3,24 @@ import sys
 import os
 import importlib
 
+from _bootstrap_imports import ensure_ufc_package
+
+PKG_DIR = ensure_ufc_package(os.getcwd())
+PKG_PATH = "ufc" if os.path.exists(os.path.join(os.getcwd(), "ufc", "__init__.py")) else "UFC"
+if PKG_DIR is None:
+    raise RuntimeError("Cannot find ufc/ or UFC/ package directory")
+
 # ---- 1. 逐模块编译 ----
 import py_compile
 mods = [
     "main.py",
-    "ufc/__init__.py", "ufc/constants.py", "ufc/crashlog.py", "ufc/config.py",
-    "ufc/fonts.py", "ufc/morse.py", "ufc/colors.py", "ufc/dcs_bios.py",
-    "ufc/input.py", "ufc/widgets.py", "ufc/startup.py", "ufc/ui.py",
+    f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
+    f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
+    f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
-print(f"[1] COMPILE OK  ({len(mods)} 个模块全部通过)")
+print(f"[1] COMPILE OK  ({len(mods)} 个模块全部通过, package={PKG_PATH})")
 
 # ---- 2. 逐模块独立 import（捕获 import 级错误）----
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
