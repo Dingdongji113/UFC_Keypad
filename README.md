@@ -8,7 +8,9 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **MORSE LIGHT**：字母+小键盘，输入文本经编队灯输出莫尔斯码
 - **LIGHT CONTROL**：着陆/滑行灯、编队灯、航线灯、频闪灯手动控制 + 预设
 - **SYSTEM SELECT**：页面切换中枢
-- **UFC POWER-UP / BIT 动画**：打开面板后显示黑底绿字自检覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
+- **可选启动动画**：打开面板后显示启动覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
+  - `UFC BIT（军机自检风格）`：黑底绿字、BIT 自检、BUS SCAN
+  - `千禧日式动画风格`：架空千禧日本动画风格终端、蓝黑 HUD、日文状态字
 - DCS-BIOS 双向同步：接收 `239.255.50.10:5010/UDP`，发送 `127.0.0.1:7778/UDP`
 - Windows 原生触控隔离（WH_MOUSE_LL 钩子 + RegisterTouchWindow）
 
@@ -26,6 +28,25 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 pip install -r requirements.txt
 python main.py
 ```
+
+## 启动动画设置
+
+在设置面板中可选择启动动画风格，配置会保存到 `ufc_config.json`：
+
+```json
+{
+  "startup_style": "ufc_bit"
+}
+```
+
+可选值：
+
+| 值 | 显示名称 |
+|----|----------|
+| `ufc_bit` | UFC BIT（军机自检风格） |
+| `anime_millennium_jp` | 千禧日式动画风格 |
+
+> 该设置下次启动生效。
 
 ## 打包 (PyInstaller, 单文件无控制台)
 ```bash
@@ -50,7 +71,7 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 | `dcs_bios.py`  | DCS-BIOS UDP 解析器、接收线程、指令发送 |
 | `input.py`     | 原生触控钩子 + 键位注入 (SendInput/PostMessage) |
 | `widgets.py`   | `UFCCell` / `UFCBlank` 自定义控件 |
-| `startup.py`   | UFC 上电 / BIT 自检动画覆盖层 |
+| `startup.py`   | 可选启动动画覆盖层与设置面板附加项 |
 | `ui.py`        | `UFCKeypadWindow` 主面板 + `SettingsWindow` 设置窗口 |
 | `main.py`      | 仓库根目录入口，创建 QApplication 与主窗口 |
 
