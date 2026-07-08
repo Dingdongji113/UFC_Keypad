@@ -32,6 +32,8 @@ print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
 # ---- 3. 构造主窗口 + SettingsWindow ----
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
@@ -82,44 +84,74 @@ for p in ["morse_light", "light_control", "select", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control)")
 
-# ---- 5. 莫尔斯引擎 ----
+# ---- 5. UFCCell 真实按键路径 ----
+# 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
+# 这里模拟鼠标 press/release，确保不会再出现 NameError，且 press/release 命令被正确调用。
+import ufc.widgets as W
+sent = []
+_orig_send = W.send_dcs_bios
+_orig_release = W._send_release
+try:
+    W.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
+    W._send_release = lambda identifier: sent.append((identifier, 0)) or True
+    cell = W.UFCCell("1", (1, 1), no_feedback=True)
+    press = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(5, 5), QPointF(5, 5), QPointF(5, 5),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
+    release = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(5, 5), QPointF(5, 5), QPointF(5, 5),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+    )
+    cell.mousePressEvent(press)
+    cell.mouseReleaseEvent(release)
+    app.processEvents()
+    assert sent[0] == ("UFC_1", 1), sent
+finally:
+    W.send_dcs_bios = _orig_send
+    W._send_release = _orig_release
+print(f"[5] UFCCELL CLICK OK  (sent={sent})")
+
+# ---- 6. 莫尔斯引擎 ----
 from ufc.morse import text_to_morse
 assert text_to_morse("SOS") == "... --- ...", text_to_morse("SOS")
 assert text_to_morse("A") == ".-", text_to_morse("A")
 assert text_to_morse(" ") == "/", text_to_morse(" ")
 assert " " in text_to_morse("SOS A")  # 字母间有空格分隔
-print("[5] MORSE OK  (SOS -> '... --- ...', A -> '.-', space -> '/')")
+print("[6] MORSE OK  (SOS -> '... --- ...', A -> '.-', space -> '/')")
 
-# ---- 6. 亮度同步（单一真值 colors._CURRENT_BRIGHTNESS）----
+# ---- 7. 亮度同步（单一真值 colors._CURRENT_BRIGHTNESS）----
 import ufc.colors as C
 w._brightness = 0.5
 w._refresh_brightness()
 assert C._CURRENT_BRIGHTNESS == 0.5, C._CURRENT_BRIGHTNESS
-print(f"[6] BRIGHTNESS SYNC OK  (colors._CURRENT_BRIGHTNESS = {C._CURRENT_BRIGHTNESS})")
+print(f"[7] BRIGHTNESS SYNC OK  (colors._CURRENT_BRIGHTNESS = {C._CURRENT_BRIGHTNESS})")
 
-# ---- 7. 灯光状态机 ----
+# ---- 8. 灯光状态机 ----
 st = w._light_state
 assert set(st.keys()) >= {"ldg", "form", "pos", "strobe"}
-print(f"[7] LIGHT STATE OK  ({st})")
+print(f"[8] LIGHT STATE OK  ({st})")
 
-# ---- 8. DCS-BIOS 指令发送路径 ----
+# ---- 9. DCS-BIOS 指令发送路径 ----
 from ufc.dcs_bios import send_dcs_bios
 ok = send_dcs_bios("FORMATION_DIMMER", 32767)
-print(f"[8] DCS-BIOS SEND OK  (returned {ok})")
+print(f"[9] DCS-BIOS SEND OK  (returned {ok})")
 
-# ---- 9. 配置读写 ----
+# ---- 10. 配置读写 ----
 from ufc.config import load_config, save_config
 cfg = load_config()
 cfg.setdefault("startup_style", STARTUP_STYLE_UFC_BIT)
 save_config(cfg)  # round-trip
-print(f"[9] CONFIG OK  (keys={sorted(cfg.keys())})")
+print(f"[10] CONFIG OK  (keys={sorted(cfg.keys())})")
 
-# ---- 10. 入口 main.py 可干净导入且含 main() ----
+# ---- 11. 入口 main.py 可干净导入且含 main() ----
 spec = importlib.util.spec_from_file_location("ufc_main", os.path.join(os.getcwd(), "main.py"))
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 assert hasattr(mod, "main")
-print("[10] MAIN.PY OK  (import clean, has main())")
+print("[11] MAIN.PY OK  (import clean, has main())")
 
 app.quit()
-print("\n========== ALL 10 CHECKS PASSED ==========")
+print("\n========== ALL 11 CHECKS PASSED ==========")
