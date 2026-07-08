@@ -99,6 +99,8 @@ def main():
         dcs_mod.DCSBIOSReceiver.stop = _receiver_stop_noop
 
         from ufc.ui import UFCKeypadWindow, SettingsWindow
+        from ufc.windowing import patch_settings_window_apply_screen
+        patch_settings_window_apply_screen(SettingsWindow)
 
         app = QApplication(sys.argv)
         app.setStyle("Fusion")
