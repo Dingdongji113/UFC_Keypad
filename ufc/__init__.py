@@ -11,8 +11,9 @@
     ufc.dcs_bios   - DCS-BIOS 解析 / 接收 / 发送
     ufc.input      - 原生触控钩子 + 键位注入
     ufc.widgets    - UFCCell / UFCBlank 控件
+    ufc.startup    - UFC 上电 / BIT 启动覆盖层
     ufc.ui         - UFCKeypadWindow / SettingsWindow
-    ufc.app        - (见上级 main.py)
+    main.py        - 程序入口
 """
 
 __version__ = "5.0"
