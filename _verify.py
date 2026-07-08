@@ -28,11 +28,21 @@ from PyQt6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
-from ufc.startup import UFCStartupOverlay
+from ufc.startup import (
+    STARTUP_STYLE_ANIME_MILLENNIUM,
+    STARTUP_STYLE_UFC_BIT,
+    AnimeMillenniumStartupOverlay,
+    UFCBitStartupOverlay,
+    attach_startup_style_settings,
+    create_startup_overlay,
+)
 w = UFCKeypadWindow()
-startup = UFCStartupOverlay(w)
+startup = create_startup_overlay(STARTUP_STYLE_UFC_BIT, w)
+assert isinstance(startup, UFCBitStartupOverlay)
 w._dcs_signal.connect(startup.on_dcs_signal)
 s = SettingsWindow(w)
+combo = attach_startup_style_settings(s)
+assert combo is not None
 print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
       f"morse cells={len(w._morse_cells)}, light displays={len(w._light_displays)})")
 
@@ -42,6 +52,12 @@ app.processEvents()
 startup.update()
 app.processEvents()
 startup.on_dcs_signal("ufc_brightness", "0.5")
+app.processEvents()
+anime = create_startup_overlay(STARTUP_STYLE_ANIME_MILLENNIUM, w)
+assert isinstance(anime, AnimeMillenniumStartupOverlay)
+anime.update()
+app.processEvents()
+anime.on_dcs_signal("ufc_brightness", "0.5")
 app.processEvents()
 for p in ["morse_light", "light_control", "select", "local_icp"]:
     w._show_page(p)
@@ -84,6 +100,7 @@ print(f"[8] DCS-BIOS SEND OK  (returned {ok})")
 # ---- 9. 配置读写 ----
 from ufc.config import load_config, save_config
 cfg = load_config()
+cfg.setdefault("startup_style", STARTUP_STYLE_UFC_BIT)
 save_config(cfg)  # round-trip
 print(f"[9] CONFIG OK  (keys={sorted(cfg.keys())})")
 
