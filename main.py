@@ -76,10 +76,12 @@ def main():
         from PyQt6.QtWidgets import QApplication
         _bootstrap_log("PyQt6 QApplication imported")
 
-        _bootstrap_log("importing startup/ui modules")
+        _bootstrap_log("importing startup/ui/windowing modules")
         from ufc.startup import attach_startup_style_settings, install_startup_overlay
         from ufc.ui import UFCKeypadWindow, SettingsWindow
-        _bootstrap_log("startup/ui modules imported")
+        from ufc.windowing import patch_settings_window_apply_screen
+        patch_settings_window_apply_screen(SettingsWindow)
+        _bootstrap_log("startup/ui/windowing modules imported")
 
         _bootstrap_log("creating QApplication")
         app = QApplication(sys.argv)
