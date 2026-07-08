@@ -9,7 +9,7 @@ mods = [
     "main.py",
     "ufc/__init__.py", "ufc/constants.py", "ufc/crashlog.py", "ufc/config.py",
     "ufc/fonts.py", "ufc/morse.py", "ufc/colors.py", "ufc/dcs_bios.py",
-    "ufc/input.py", "ufc/widgets.py", "ufc/ui.py",
+    "ufc/input.py", "ufc/widgets.py", "ufc/startup.py", "ufc/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -19,7 +19,7 @@ print(f"[1] COMPILE OK  ({len(mods)} 个模块全部通过)")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import PyQt6  # noqa
 for name in ["constants", "crashlog", "config", "fonts", "morse",
-             "colors", "dcs_bios", "input", "widgets", "ui", "ui"]:
+             "colors", "dcs_bios", "input", "widgets", "startup", "ui"]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
@@ -28,13 +28,20 @@ from PyQt6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
+from ufc.startup import UFCStartupOverlay
 w = UFCKeypadWindow()
+startup = UFCStartupOverlay(w)
+w._dcs_signal.connect(startup.on_dcs_signal)
 s = SettingsWindow(w)
 print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
       f"morse cells={len(w._morse_cells)}, light displays={len(w._light_displays)})")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
+app.processEvents()
+startup.update()
+app.processEvents()
+startup.on_dcs_signal("ufc_brightness", "0.5")
 app.processEvents()
 for p in ["morse_light", "light_control", "select", "local_icp"]:
     w._show_page(p)
