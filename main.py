@@ -60,6 +60,11 @@ def main():
     _bootstrap_log(f"CWD: {os.getcwd()}")
 
     try:
+        _bootstrap_log("ensuring ufc package import compatibility")
+        from _bootstrap_imports import ensure_ufc_package
+        pkg_dir = ensure_ufc_package(os.path.dirname(os.path.abspath(__file__)))
+        _bootstrap_log(f"ufc package dir: {pkg_dir}")
+
         _bootstrap_log("importing crashlog")
         from ufc.crashlog import setup_crash_log, _crash_log
         _bootstrap_log("crashlog imported")
@@ -102,7 +107,6 @@ def main():
         _bootstrap_log("=" * 60)
 
         try:
-            # 如果正式日志可用，也写进去。
             _crash_log("=" * 60)  # noqa: F821
             _crash_log(f"FATAL STARTUP EXCEPTION: {type(exc).__name__}: {exc}")  # noqa: F821
             _crash_log("Traceback:")  # noqa: F821
