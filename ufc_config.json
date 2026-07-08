@@ -1,3 +1,4 @@
 {
-  "native_touch": true
+  "native_touch": true,
+  "startup_style": "ufc_bit"
 }
