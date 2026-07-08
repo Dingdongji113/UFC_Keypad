@@ -11,7 +11,7 @@
     ufc.dcs_bios   - DCS-BIOS 解析 / 接收 / 发送
     ufc.input      - 原生触控钩子 + 键位注入
     ufc.widgets    - UFCCell / UFCBlank 控件
-    ufc.startup    - UFC 上电 / BIT 启动覆盖层
+    ufc.startup    - 可选启动动画覆盖层 (UFC BIT / 千禧日式动画风格)
     ufc.ui         - UFCKeypadWindow / SettingsWindow
     main.py        - 程序入口
 """
