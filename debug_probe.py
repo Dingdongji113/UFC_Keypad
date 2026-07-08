@@ -81,6 +81,10 @@ def main():
     log(f"__file__: {__file__}")
     log(f"sys.path[0]: {sys.path[0] if sys.path else ''}")
 
+    bootstrap = step("import _bootstrap_imports", lambda: __import__("_bootstrap_imports", fromlist=["ensure_ufc_package"]))
+    pkg_dir = step("ensure ufc package", lambda: bootstrap.ensure_ufc_package(os.path.dirname(os.path.abspath(__file__))))
+    log(f"resolved ufc package dir: {pkg_dir}")
+
     cfg_mod = step("import ufc.config", lambda: __import__("ufc.config", fromlist=["*"]))
     log(f"CONFIG_FILE: {getattr(cfg_mod, 'CONFIG_FILE', None)}")
     log(f"CRASH_LOG_FILE: {getattr(cfg_mod, 'CRASH_LOG_FILE', None)}")
