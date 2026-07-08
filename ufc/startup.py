@@ -3,6 +3,8 @@
 
 启动覆盖层在 UFCKeypadWindow 上方显示，直到收到第一条 DCS-BIOS 信号。
 默认风格为黑底绿字 UFC BIT；另提供架空千禧日本动画风格终端启动画面。
+
+如果 DCS 尚未输出数据，用户可点击 / 触摸覆盖层手动跳过，避免遮挡 SYSTEMS 主菜单。
 """
 import time
 
@@ -31,9 +33,13 @@ class StartupOverlayBase(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        # 不再透明传鼠标：overlay 视觉覆盖时应先吃掉一次点击并自行关闭，
+        # 避免“菜单已经切到背后但被 overlay 遮住”的错觉。
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setAutoFillBackground(False)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self._tick = 0
         self._connected = False
@@ -52,6 +58,18 @@ class StartupOverlayBase(QWidget):
 
         self.show()
         self.raise_()
+
+    def event(self, event):
+        if event.type() in (QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate):
+            self._finish()
+            event.accept()
+            return True
+        return super().event(event)
+
+    def mousePressEvent(self, event):
+        """无 DCS 信号时允许点击 / 触摸跳过启动画面。"""
+        self._finish()
+        event.accept()
 
     def eventFilter(self, obj, event):
         parent = self.parentWidget()
@@ -199,7 +217,11 @@ class UFCBitStartupOverlay(StartupOverlayBase):
             p.drawText(QRect(rx(0), ry(528), rw(1024), rh(34)), Qt.AlignmentFlag.AlignCenter, "DCS-BIOS ONLINE   UFC READY")
         elif time.time() - self._started_at > 5.0:
             p.setPen(dim_green)
-            p.drawText(QRect(rx(0), ry(528), rw(1024), rh(34)), Qt.AlignmentFlag.AlignCenter, "NO DATA   CHECK DCS / EXPORT")
+            p.drawText(QRect(rx(0), ry(518), rw(1024), rh(28)), Qt.AlignmentFlag.AlignCenter, "NO DATA   CHECK DCS / EXPORT")
+            p.drawText(QRect(rx(0), ry(548), rw(1024), rh(26)), Qt.AlignmentFlag.AlignCenter, "TOUCH / CLICK TO SKIP")
+        else:
+            p.setPen(dim_green)
+            p.drawText(QRect(rx(0), ry(548), rw(1024), rh(26)), Qt.AlignmentFlag.AlignCenter, "TOUCH / CLICK TO SKIP")
 
 
 # 向后兼容旧导入名。
@@ -300,7 +322,12 @@ class AnimeMillenniumStartupOverlay(StartupOverlayBase):
         elif time.time() - self._started_at > 5.0:
             p.setFont(jp_font)
             p.setPen(dim_cyan)
-            p.drawText(QRect(rx(0), ry(520), rw(1024), rh(34)), Qt.AlignmentFlag.AlignCenter, "信号待機    CHECK DCS / EXPORT")
+            p.drawText(QRect(rx(0), ry(510), rw(1024), rh(30)), Qt.AlignmentFlag.AlignCenter, "信号待機    CHECK DCS / EXPORT")
+            p.drawText(QRect(rx(0), ry(542), rw(1024), rh(28)), Qt.AlignmentFlag.AlignCenter, "TOUCH / CLICK TO SKIP")
+        else:
+            p.setFont(jp_font)
+            p.setPen(dim_cyan)
+            p.drawText(QRect(rx(0), ry(542), rw(1024), rh(28)), Qt.AlignmentFlag.AlignCenter, "TOUCH / CLICK TO SKIP")
 
 
 def normalize_startup_style(style_name):
