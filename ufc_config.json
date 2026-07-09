@@ -20,6 +20,10 @@
     }
   },
   "cold_start_controls": {
+    "ejection_seat_arm": {
+      "id": "EJECTION_SEAT_ARMED",
+      "value": 1
+    },
     "battery_on": {
       "id": "BATTERY_SW",
       "value": 2
@@ -113,6 +117,44 @@
           "id": "FCS_RESET_BTN",
           "value": 0,
           "delay_ms": 80
+        }
+      ]
+    },
+    "rwr_power_on": {
+      "sequence": [
+        {
+          "id": "RWR_POWER_BTN",
+          "value": 1,
+          "delay_ms": 120
+        },
+        {
+          "id": "RWR_POWER_BTN",
+          "value": 0,
+          "delay_ms": 120
+        }
+      ]
+    },
+    "fcs_reset_rwr_power": {
+      "sequence": [
+        {
+          "id": "FCS_RESET_BTN",
+          "value": 1,
+          "delay_ms": 80
+        },
+        {
+          "id": "FCS_RESET_BTN",
+          "value": 0,
+          "delay_ms": 120
+        },
+        {
+          "id": "RWR_POWER_BTN",
+          "value": 1,
+          "delay_ms": 120
+        },
+        {
+          "id": "RWR_POWER_BTN",
+          "value": 0,
+          "delay_ms": 120
         }
       ]
     },
