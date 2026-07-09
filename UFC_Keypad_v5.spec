@@ -31,6 +31,7 @@ a = Analysis(
         'ufc.cold_start',
         'ufc.cold_direct_entry',
         'ufc.cold_setup_split',
+        'ufc.cold_ui_fixups',
         'ufc.ui',
     ],
     hookspath=[],
