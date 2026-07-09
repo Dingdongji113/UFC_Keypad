@@ -16,7 +16,8 @@ mods = [
     "main.py",
     f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
     f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
-    f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py",
+    f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -26,7 +27,8 @@ print(f"[1] COMPILE OK  ({len(mods)} 个模块全部通过, package={PKG_PATH})"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import PyQt6  # noqa
 for name in ["constants", "crashlog", "config", "fonts", "morse",
-             "colors", "dcs_bios", "input", "widgets", "startup", "ui"]:
+             "colors", "dcs_bios", "input", "widgets", "startup",
+             "windowing", "cold_start", "ui"]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
@@ -37,6 +39,7 @@ from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
+from ufc.cold_start import patch_cold_start
 from ufc.startup import (
     STARTUP_STYLE_ANIME_MILLENNIUM,
     STARTUP_STYLE_UFC_BIT,
@@ -45,6 +48,7 @@ from ufc.startup import (
     attach_startup_style_settings,
     install_startup_overlay,
 )
+patch_cold_start(UFCKeypadWindow)
 w = UFCKeypadWindow()
 startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
 assert isinstance(startup, UFCBitStartupOverlay)
@@ -71,7 +75,7 @@ app.processEvents()
 bit = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
 assert isinstance(bit, UFCBitStartupOverlay)
 assert w._startup_overlay is bit
-for p in ["morse_light", "light_control", "select", "local_icp"]:
+for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     w._show_page(p)
     app.processEvents()
 w.update()
@@ -79,10 +83,22 @@ app.processEvents()
 print("[3b] GUI EVENTS OK  (showEvent/paintEvent 触发无异常)")
 
 # ---- 4. 页面切换 ----
-for p in ["morse_light", "light_control", "select", "local_icp"]:
+for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     w._show_page(p)
     assert w._current_page == p, p
-print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control)")
+print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
+
+# ---- 4b. 冷启动序列器基础路径 ----
+w._show_page("select")
+w.on_cell_click((201, 3))
+assert w._current_page == "cold_start"
+w.on_cell_click((300, 4))  # DAY
+assert w._cold_display_mode == "day"
+w.on_cell_click((300, 5))  # NIGHT
+assert w._cold_display_mode == "night"
+w.on_cell_click((300, 0))  # START -> ARMED
+assert w._cold_state == "armed"
+print("[4b] COLD START UI OK  (select option, DAY/NIGHT, ARM)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 # 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
@@ -143,6 +159,7 @@ print(f"[9] DCS-BIOS SEND OK  (returned {ok})")
 from ufc.config import load_config, save_config
 cfg = load_config()
 cfg.setdefault("startup_style", STARTUP_STYLE_UFC_BIT)
+cfg.setdefault("cold_start_display_mode", "day")
 save_config(cfg)  # round-trip
 print(f"[10] CONFIG OK  (keys={sorted(cfg.keys())})")
 
