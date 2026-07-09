@@ -118,7 +118,7 @@
     },
     "ecm_receive": {
       "id": "ECM_MODE_SW",
-      "value": 3
+      "value": 1
     },
     "ins_land": {
       "id": "INS_SW",
@@ -139,12 +139,12 @@
       "night_value": 1
     },
     "display_ampcd_select": {
-      "id": "",
+      "id": "AMPCD_NIGHT_DAY",
       "day_value": 1,
       "night_value": 0
     },
     "display_hud_select": {
-      "id": "",
+      "id": "HUD_SYM_BRT_SELECT",
       "day_value": 1,
       "night_value": 0
     },
