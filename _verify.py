@@ -105,45 +105,47 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 冷启动入口 + 任意一发 RPM gating ----
+# ---- 4b. 冷启动入口 + 任意一发 RPM gating + 断线重置 ----
 w.dcs_bios.latest.clear()
-w._cold_left_rpm = None
-w._cold_right_rpm = None
-w._cold_first_mode_decided = False
-w._cold_dcs_seen = False
+w._cold_reset_session_state("verify start")
 w._show_page("local_icp")
 w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
 assert w._cold_last_action == "WAIT ENGINE RPM DATA"
-
-w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
-w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
-w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
-w._cold_detect_startup_mode()
-assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
+
+# fresh left low only -> still unknown
+w._update_display("left_engine_rpm", "  0")
+assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
+# fresh both low -> auto cold page
 w._cold_first_mode_decided = False
-w._cold_on_dcs_signal("IFEI_RPM_R", "  0")
+w._update_display("right_engine_rpm", "  0")
 assert w._current_page == "cold_start"
 assert w._cold_last_action == "AUTO COLD START ENTRY"
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
 w._cold_abort()
-w._show_page("local_icp")
+
+# Simulate leaving a cold mission: old latest still contains 0/0, but timeout reset must remove it.
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
-w.dcs_bios.latest["IFEI_RPM_R"] = "  75"
-w._cold_left_rpm = None
-w._cold_right_rpm = None
-w._cold_detect_startup_mode()
+w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
+w._cold_reset_session_state("verify mission switch")
+assert "IFEI_RPM_L" not in w.dcs_bios.latest
+assert "IFEI_RPM_R" not in w.dcs_bios.latest
+w._show_page("local_icp")
+w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
+assert w._current_page == "cold_start"
+assert w._cold_last_action == "WAIT ENGINE RPM DATA"
+# Now the new hot mission sends fresh right RPM. It must override old cold state and become non-cold.
+w._cold_first_mode_decided = False
+w._update_display("right_engine_rpm", "  75")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
 assert CDE.MIN_STARTUP_ANIM_MS == 5000
-w.dcs_bios.latest["IFEI_RPM_L"] = "120F"
-w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
-w._cold_left_rpm = None
-w._cold_right_rpm = None
-w._cold_detect_startup_mode()
+
+w._cold_reset_session_state("verify suffix parse")
+w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (wait RPM, auto cold page, either >=60 local ICP, min anim 5s)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (fresh RPM only, stale RPM cleared, min anim 5s)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
