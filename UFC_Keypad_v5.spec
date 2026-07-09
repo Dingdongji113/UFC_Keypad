@@ -30,6 +30,7 @@ a = Analysis(
         'ufc.realtime_rpm',
         'ufc.cold_start',
         'ufc.cold_direct_entry',
+        'ufc.cold_setup_split',
         'ufc.ui',
     ],
     hookspath=[],
