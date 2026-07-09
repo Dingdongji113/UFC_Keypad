@@ -17,7 +17,7 @@ mods = [
     f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
     f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py",
-    f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -28,7 +28,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import PyQt6  # noqa
 for name in ["constants", "crashlog", "config", "fonts", "morse",
              "colors", "dcs_bios", "input", "widgets", "startup",
-             "windowing", "cold_start", "ui"]:
+             "windowing", "ifei_rpm", "cold_start", "ui"]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
@@ -39,6 +39,8 @@ from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
+from ufc.dcs_bios import DCSBIOSReceiver
+from ufc.ifei_rpm import install_ifei_rpm_fallback
 import ufc.cold_start as CS
 from ufc.cold_start import patch_cold_start
 from ufc.startup import (
@@ -49,6 +51,7 @@ from ufc.startup import (
     attach_startup_style_settings,
     install_startup_overlay,
 )
+install_ifei_rpm_fallback()
 patch_cold_start(UFCKeypadWindow)
 w = UFCKeypadWindow()
 startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
@@ -58,6 +61,13 @@ combo = attach_startup_style_settings(s)
 assert combo is not None
 print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
       f"morse cells={len(w._morse_cells)}, light displays={len(w._light_displays)})")
+
+# ---- 3a. IFEI RPM fallback ----
+rx = DCSBIOSReceiver()
+rx._use_fallback_addresses()
+assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
+assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_L"][0] == "left_engine_rpm"
+print("[3a] IFEI RPM FALLBACK OK  (IFEI_RPM_L @ 0x749E len=3)")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
@@ -106,7 +116,10 @@ w._cold_abort()
 w.dcs_bios.latest["IFEI_RPM_L"] = "  75"
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] STARTUP MANAGER OK  (left RPM <60 cold, >=60 non-cold, DAY/NIGHT, ARM)")
+w.dcs_bios.latest["IFEI_RPM_L"] = "120F"
+w._cold_detect_startup_mode()
+assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
+print("[4b] STARTUP MANAGER OK  (left RPM <60 cold, >=60 non-cold, suffix-safe parse)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
