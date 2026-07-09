@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
-"""F/A-18C cold-start sequencer UI patch.
+"""F/A-18C startup manager UI patch.
 
 This module intentionally lives outside ``ufc.ui``.  The main window is already
-large and historically fragile, so the sequencer is installed by monkey-patching
-``UFCKeypadWindow`` before the window instance is created.
+large and historically fragile, so the startup manager is installed by
+monkey-patching ``UFCKeypadWindow`` before the window instance is created.
 
 Implementation scope:
-- Adds a SYSTEMS option "4  COLD START".
-- Adds a low-brightness cold-start sequencer page.
-- Implements an ASSIST-style sequence:
-  battery/APU/right engine/left engine/APU off/supervised system prep/display
-  mode/display brightness/UFC ready/INS mode/complete.
+- Adds a SYSTEMS option "4  STARTUP MGR".
+- Adds a low-brightness startup manager page.
+- Automatically decides between COLD START and NON-COLD / POST-START by reading
+  left engine RPM from DCS-BIOS.  Rule: left RPM < 60 => COLD START; left RPM >=
+  60 => NON-COLD.
+- COLD START performs battery/APU/right engine/left engine/APU off/supervised
+  system prep/display mode/display brightness/UFC ready/INS mode/complete.
+- NON-COLD skips battery/APU/engine start and performs only supervised system
+  prep/display mode/display brightness/UFC ready/INS mode/complete.
 - Does not run BIT/self-test and does not touch external lights.
 - Requires user confirmation for APU ready and throttle-idle/engine-stable
   points.
@@ -27,20 +31,27 @@ do not freeze the touch panel UI.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
+import os
+import re
 import time
 
 from PyQt6.QtCore import Qt, QTimer
 
 from ufc.config import load_config, save_config
-from ufc.dcs_bios import send_dcs_bios
+from ufc.dcs_bios import DCSBIOSReceiver, send_dcs_bios
 
 
 PAGE = "cold_start"
+STARTUP_MODE_COLD = "cold_start"
+STARTUP_MODE_NON_COLD = "non_cold"
+STARTUP_MODE_UNKNOWN = "unknown"
+LEFT_RPM_FIELD = "IFEI_RPM_L"
+LEFT_RPM_INTERNAL = "left_engine_rpm"
 
-# Click positions reserved for the cold-start page.  They intentionally do not
-# overlap existing UFC_BIOS_MAP entries, so UFCCell will not emit aircraft UFC
-# commands before the page handler sees them.
+# Click positions reserved for the startup manager page.  They intentionally do
+# not overlap existing UFC_BIOS_MAP entries, so UFCCell will not emit aircraft
+# UFC commands before the page handler sees them.
 P_START = (300, 0)
 P_PAUSE = (300, 1)
 P_ABORT = (300, 2)
@@ -125,14 +136,23 @@ def _is_empty(value: Any) -> bool:
     return value is None or value == ""
 
 
-def _merge_control(default: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge user config over built-in defaults without letting stale empty IDs win.
+def _parse_rpm_value(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
 
-    This matters when a user extracts a new build over an old folder: the old
-    ``ufc_config.json`` may still contain ``"id": ""`` placeholders.  A plain
-    dict.update would erase the newly-added safe defaults and make every action
-    show NO ID.
-    """
+
+def _merge_control(default: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge user config over built-in defaults without letting stale empty IDs win."""
     result = default.copy()
 
     default_sequence = default.get("sequence")
@@ -147,7 +167,6 @@ def _merge_control(default: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
             user = user_sequence[i] if i < len(user_sequence) and isinstance(user_sequence[i], dict) else {}
             merged = base.copy()
             for k, v in user.items():
-                # Empty user placeholders do not override non-empty defaults.
                 if _is_empty(v) and not _is_empty(base.get(k)):
                     continue
                 merged[k] = v
@@ -185,39 +204,72 @@ def _merged_config() -> Dict[str, Any]:
     cfg.setdefault("cold_start_mode", "assist")
     cfg.setdefault("cold_start_profile", "land")
     cfg.setdefault("cold_start_display_mode", "day")
+    cfg.setdefault("cold_start_left_rpm_threshold", 60)
     cfg["cold_start_controls"] = controls
     cfg["display_brightness_presets"] = presets
     return cfg
 
 
+def _patch_dcsbios_left_rpm():
+    """Teach DCSBIOSReceiver to parse IFEI_RPM_L for auto startup detection."""
+    DCSBIOSReceiver.UFC_FIELDS[LEFT_RPM_FIELD] = (LEFT_RPM_INTERNAL, None, 3)
+    DCSBIOSReceiver.KNOWN_FIELDS[LEFT_RPM_FIELD] = 3
+    DCSBIOSReceiver._INTERNAL_TO_BIOS = {}
+
+    if getattr(DCSBIOSReceiver, "_cold_rpm_patch_installed", False):
+        return
+    DCSBIOSReceiver._cold_rpm_patch_installed = True
+
+    @classmethod
+    def _parse_addresses_h_with_ifei(cls, path: str):
+        addr_map = {}
+        if not path or not os.path.exists(path):
+            return addr_map
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                m = re.match(
+                    r"#define\s+FA_18C_hornet_((?:UFC_\w+)|IFEI_RPM_L)_A\s+(0x[0-9A-Fa-f]+)",
+                    line.strip(),
+                )
+                if m:
+                    field_name = m.group(1)
+                    addr_str = m.group(2)
+                    if field_name in cls.KNOWN_FIELDS:
+                        length = cls.KNOWN_FIELDS[field_name]
+                        addr_map[int(addr_str, 16)] = (field_name, length)
+        return addr_map
+
+    DCSBIOSReceiver._parse_addresses_h = _parse_addresses_h_with_ifei
+
+
 def patch_cold_start(UFCKeypadWindowClass):
-    """Install cold-start page and state machine onto ``UFCKeypadWindow``."""
+    """Install startup manager page and state machine onto ``UFCKeypadWindow``."""
+    _patch_dcsbios_left_rpm()
+
     if getattr(UFCKeypadWindowClass, "_cold_start_patch_installed", False):
         return
     UFCKeypadWindowClass._cold_start_patch_installed = True
 
     orig_init_ui = UFCKeypadWindowClass.init_ui
     orig_on_cell_click = UFCKeypadWindowClass.on_cell_click
+    orig_update_display = UFCKeypadWindowClass._update_display
 
     def init_ui(self):
         orig_init_ui(self)
         self._cold_start_setup_state()
         self._init_cold_start_page()
-        # Replace the old reserved slot with the visible COLD START entry.
         cold_entry = getattr(self, "cells", {}).get((201, 3))
         if cold_entry is not None:
-            cold_entry.setText("4  COLD START")
-            if getattr(cold_entry, "_label_font", None) is not None:
+            cold_entry.setText("4  STARTUP MGR")
+            if getattr(cold_entry, "_label_font", None) is not None and cold_entry.label is not None:
                 cold_entry._label_font.setBold(True)
                 cold_entry.label.setFont(cold_entry._label_font)
-        # Original init_ui ends on local_icp before this page exists.  Re-apply
-        # visibility so the new cold-start widgets start hidden.
         self._show_page(self._current_page)
 
     def on_cell_click(self, pos):
-        # SYSTEM SELECT option 4 -> COLD START
         if getattr(self, "_current_page", None) == "select" and pos == (201, 3):
             self._show_page(PAGE)
+            self._cold_detect_startup_mode()
             self._cold_refresh_ui()
             return
 
@@ -227,16 +279,28 @@ def patch_cold_start(UFCKeypadWindowClass):
 
         orig_on_cell_click(self, pos)
 
+    def _update_display(self, field_name, value):
+        if field_name == LEFT_RPM_INTERNAL:
+            self._cold_left_rpm = _parse_rpm_value(value)
+            if getattr(self, "_current_page", None) == PAGE:
+                self._cold_detect_startup_mode()
+                self._cold_refresh_ui()
+            return
+        orig_update_display(self, field_name, value)
+
     UFCKeypadWindowClass.init_ui = init_ui
     UFCKeypadWindowClass.on_cell_click = on_cell_click
+    UFCKeypadWindowClass._update_display = _update_display
 
-    # Attach methods.  We keep them as standalone functions to avoid touching
-    # ufc.ui directly.
     UFCKeypadWindowClass._cold_start_setup_state = _cold_start_setup_state
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_handle_click = _cold_handle_click
     UFCKeypadWindowClass._cold_arm_or_continue = _cold_arm_or_continue
+    UFCKeypadWindowClass._cold_step_list = _cold_step_list
     UFCKeypadWindowClass._cold_run_next_step = _cold_run_next_step
+    UFCKeypadWindowClass._cold_detect_startup_mode = _cold_detect_startup_mode
+    UFCKeypadWindowClass._cold_get_left_rpm = _cold_get_left_rpm
+    UFCKeypadWindowClass._cold_poll_detection = _cold_poll_detection
     UFCKeypadWindowClass._cold_enter_hold = _cold_enter_hold
     UFCKeypadWindowClass._cold_abort = _cold_abort
     UFCKeypadWindowClass._cold_pause = _cold_pause
@@ -266,6 +330,12 @@ def _cold_start_setup_state(self):
     self._cold_profile = str(cfg.get("cold_start_profile", "land")).lower()
     if self._cold_profile not in ("land", "carrier"):
         self._cold_profile = "land"
+    try:
+        self._cold_rpm_threshold = float(cfg.get("cold_start_left_rpm_threshold", 60))
+    except (TypeError, ValueError):
+        self._cold_rpm_threshold = 60.0
+    self._cold_left_rpm = None
+    self._cold_detected_mode = STARTUP_MODE_UNKNOWN
     self._cold_right_engine_online = False
     self._cold_left_engine_online = False
     self._cold_apu_off = False
@@ -274,22 +344,24 @@ def _cold_start_setup_state(self):
     self._cold_sequence_token = 0
     self._cold_cells = {}
     self._cold_status_cells = {}
-    self._cold_last_action = "READY"
-    self._cold_total_steps = 20
+    self._cold_last_action = "AUTO DETECT LEFT RPM"
+    self._cold_total_steps = 0
+
+    self._cold_detect_timer = QTimer(self)
+    self._cold_detect_timer.timeout.connect(self._cold_poll_detection)
+    self._cold_detect_timer.start(1000)
 
 
 def _init_cold_start_page(self):
-    # Top row
     self.place_cell("I/P", (0, 0), 8, 7, 140, 90, font_size=20,
                     register=False, no_feedback=True, page=PAGE)
     self.place_cell("SYSTEMS", (1, 0), 164, 7, 140, 90, font_size=20,
                     register=False, no_feedback=True, page=PAGE)
-    title = self.place_cell("COLD START\nSEQUENCER", None, 316, 7, 700, 90,
+    title = self.place_cell("STARTUP\nMANAGER", None, 316, 7, 700, 90,
                             font_size=26, is_variable=True, register=False,
                             no_feedback=True, page=PAGE)
     self._cold_status_cells["title"] = title
 
-    # Four status rows
     rows = [
         ("state", 114, 90),
         ("engines", 221, 90),
@@ -302,7 +374,6 @@ def _init_cold_start_page(self):
                             page=PAGE, var_align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._cold_status_cells[key] = c
 
-    # Bottom controls
     y5, h5 = 542, 50
     buttons = [
         ("START", P_START, 8, 140),
@@ -318,7 +389,38 @@ def _init_cold_start_page(self):
                                register=False, page=PAGE, bold=True)
         self._cold_cells[pos] = cell
 
+    self._cold_detect_startup_mode()
     self._cold_refresh_ui()
+
+
+def _cold_poll_detection(self):
+    if getattr(self, "_current_page", None) != PAGE:
+        return
+    if getattr(self, "_cold_state", "idle") in ("idle", "armed", "hold"):
+        self._cold_detect_startup_mode()
+        self._cold_refresh_ui()
+
+
+def _cold_get_left_rpm(self) -> Optional[float]:
+    rpm = _parse_rpm_value(getattr(self, "_cold_left_rpm", None))
+    if rpm is not None:
+        return rpm
+    latest = getattr(getattr(self, "dcs_bios", None), "latest", {}) or {}
+    for key in (LEFT_RPM_FIELD, LEFT_RPM_INTERNAL):
+        rpm = _parse_rpm_value(latest.get(key))
+        if rpm is not None:
+            return rpm
+    return None
+
+
+def _cold_detect_startup_mode(self) -> str:
+    rpm = self._cold_get_left_rpm()
+    self._cold_left_rpm = rpm
+    if rpm is None:
+        self._cold_detected_mode = STARTUP_MODE_UNKNOWN
+        return self._cold_detected_mode
+    self._cold_detected_mode = STARTUP_MODE_COLD if rpm < self._cold_rpm_threshold else STARTUP_MODE_NON_COLD
+    return self._cold_detected_mode
 
 
 def _cold_handle_click(self, pos):
@@ -347,16 +449,34 @@ def _cold_handle_click(self, pos):
 
 def _cold_arm_or_continue(self):
     if self._cold_state in ("idle", "aborted", "complete"):
+        mode = self._cold_detect_startup_mode()
+        if mode == STARTUP_MODE_UNKNOWN:
+            self._cold_enter_hold("WAIT LEFT RPM DATA")
+            return
         self._cold_state = "armed"
         self._cold_step_index = -1
-        self._cold_last_action = "PRESS START AGAIN TO RUN"
-        self._cold_log("ARMED")
+        self._cold_last_action = f"AUTO {mode.upper().replace('_', '-')} / PRESS START AGAIN"
+        self._cold_log(f"ARMED {mode} RPM={self._cold_left_rpm}")
         return
 
     if self._cold_state == "armed":
+        mode = self._cold_detect_startup_mode()
+        if mode == STARTUP_MODE_UNKNOWN:
+            self._cold_enter_hold("WAIT LEFT RPM DATA")
+            return
+        if mode == STARTUP_MODE_NON_COLD:
+            self._cold_right_engine_online = True
+            self._cold_left_engine_online = True
+            self._cold_apu_off = True
+        else:
+            self._cold_right_engine_online = False
+            self._cold_left_engine_online = False
+            self._cold_apu_off = False
+        self._cold_display_brightness_applied = False
+        self._cold_normal_ufc_locked = True
         self._cold_state = "running"
         self._cold_step_index = 0
-        self._cold_log("RUN")
+        self._cold_log(f"RUN {mode} RPM={self._cold_left_rpm}")
         self._cold_run_next_step()
         return
 
@@ -367,6 +487,10 @@ def _cold_arm_or_continue(self):
         return
 
     if self._cold_state == "hold":
+        mode = self._cold_detect_startup_mode()
+        if self._cold_hold_reason == "WAIT LEFT RPM DATA" and mode == STARTUP_MODE_UNKNOWN:
+            self._cold_last_action = "WAIT LEFT RPM DATA"
+            return
         self._cold_state = "running"
         self._cold_log("CONTINUE")
         self._cold_step_index += 1
@@ -381,30 +505,14 @@ def _cold_arm_or_continue(self):
         return
 
     if self._cold_state == "select_display":
-        if not self._cold_display_mode:
-            self._cold_enter_hold("SELECT DAY OR NIGHT")
-            return
         self._cold_state = "running"
         self._cold_step_index += 1
         self._cold_run_next_step()
         return
 
 
-def _cold_run_next_step(self):
-    if self._cold_state != "running":
-        return
-
-    steps = [
-        ("BATTERY ON", "send", "battery_on"),
-        ("APU START", "send", "apu_start"),
-        ("CONFIRM APU READY", "user", "APU READY? PRESS START"),
-        ("RIGHT ENGINE CRANK", "send", "right_engine_crank"),
-        ("SET RIGHT THROTTLE IDLE", "user", "SET R THROTTLE IDLE, THEN START"),
-        ("CONFIRM RIGHT ENGINE STABLE", "flag_right", "R ENGINE STABLE CONFIRMED"),
-        ("LEFT ENGINE CRANK", "send", "left_engine_crank"),
-        ("SET LEFT THROTTLE IDLE", "user", "SET L THROTTLE IDLE, THEN START"),
-        ("CONFIRM LEFT ENGINE STABLE", "flag_left", "L ENGINE STABLE CONFIRMED"),
-        ("APU OFF", "apu_off", "apu_off"),
+def _cold_step_list(self):
+    prep_steps = [
         ("CLOSE CANOPY", "supervised", "canopy_close"),
         ("BLEED AIR PULL ROTATE 360", "supervised", "bleed_air_cycle"),
         ("TRIM RESET", "supervised", "trim_reset"),
@@ -417,11 +525,32 @@ def _cold_run_next_step(self):
         ("INS MODE", "ins", ""),
         ("COMPLETE", "complete", ""),
     ]
+    if self._cold_detected_mode == STARTUP_MODE_NON_COLD:
+        return prep_steps
+    return [
+        ("BATTERY ON", "send", "battery_on"),
+        ("APU START", "send", "apu_start"),
+        ("CONFIRM APU READY", "user", "APU READY? PRESS START"),
+        ("RIGHT ENGINE CRANK", "send", "right_engine_crank"),
+        ("SET RIGHT THROTTLE IDLE", "user", "SET R THROTTLE IDLE, THEN START"),
+        ("CONFIRM RIGHT ENGINE STABLE", "flag_right", "R ENGINE STABLE CONFIRMED"),
+        ("LEFT ENGINE CRANK", "send", "left_engine_crank"),
+        ("SET LEFT THROTTLE IDLE", "user", "SET L THROTTLE IDLE, THEN START"),
+        ("CONFIRM LEFT ENGINE STABLE", "flag_left", "L ENGINE STABLE CONFIRMED"),
+        ("APU OFF", "apu_off", "apu_off"),
+    ] + prep_steps
+
+
+def _cold_run_next_step(self):
+    if self._cold_state != "running":
+        return
+
+    steps = self._cold_step_list()
     self._cold_total_steps = len(steps) - 1
 
     if self._cold_step_index >= len(steps):
         self._cold_state = "complete"
-        self._cold_last_action = "COLD START COMPLETE"
+        self._cold_last_action = "STARTUP COMPLETE"
         self._cold_refresh_ui()
         return
 
@@ -467,7 +596,7 @@ def _cold_run_next_step(self):
         )
     elif kind == "complete":
         self._cold_state = "complete"
-        self._cold_last_action = "COLD START COMPLETE"
+        self._cold_last_action = "STARTUP COMPLETE"
         self._cold_refresh_ui()
 
 
@@ -567,7 +696,6 @@ def _cold_entries_from_config(self, key: str) -> List[Dict[str, Any]]:
 
 
 def _cold_send_configured(self, key: str) -> bool:
-    """Compatibility synchronous sender for short one-shot controls."""
     sent = False
     for entry in self._cold_entries_from_config(key):
         ident = str(entry.get("id", "") or "").strip()
@@ -637,8 +765,6 @@ def _cold_apply_display_brightness(self):
     }
     results = []
 
-    # Set known DAY/NIGHT selectors first.  Ambiguous selectors can be left with
-    # an empty id in config and will be skipped.
     for target in ("lddi", "rddi", "ampcd", "hud"):
         item = controls.get(f"display_{target}_select", {})
         ident = str(item.get("id", "") or "").strip() if isinstance(item, dict) else ""
@@ -664,6 +790,10 @@ def _cold_apply_display_brightness(self):
 
 
 def _cold_unlock_local_icp(self):
+    if self._cold_detected_mode == STARTUP_MODE_NON_COLD:
+        self._cold_right_engine_online = True
+        self._cold_left_engine_online = True
+        self._cold_apu_off = True
     self._cold_normal_ufc_locked = not (
         self._cold_right_engine_online
         and self._cold_left_engine_online
@@ -679,10 +809,18 @@ def _cold_unlock_local_icp(self):
 def _cold_status_lines(self):
     state = getattr(self, "_cold_state", "idle").upper()
     idx = getattr(self, "_cold_step_index", -1)
-    total = getattr(self, "_cold_total_steps", 20)
+    total = getattr(self, "_cold_total_steps", 0)
     step_txt = "--" if idx < 0 else f"{idx:02d}/{total:02d}"
     profile = getattr(self, "_cold_profile", "land").upper()
     mode = getattr(self, "_cold_display_mode", "day").upper()
+    detected = getattr(self, "_cold_detected_mode", STARTUP_MODE_UNKNOWN)
+    rpm = getattr(self, "_cold_left_rpm", None)
+    rpm_txt = "---" if rpm is None else f"{rpm:.0f}%"
+    start_mode_txt = {
+        STARTUP_MODE_COLD: "COLD START",
+        STARTUP_MODE_NON_COLD: "NON-COLD",
+        STARTUP_MODE_UNKNOWN: "DETECTING",
+    }.get(detected, "DETECTING")
     r_eng = "STABLE" if getattr(self, "_cold_right_engine_online", False) else "OFF/START"
     l_eng = "STABLE" if getattr(self, "_cold_left_engine_online", False) else "OFF/START"
     apu = "OFF" if getattr(self, "_cold_apu_off", False) else "ON/REQ"
@@ -691,9 +829,9 @@ def _cold_status_lines(self):
     )
     return {
         "state": f"STATE {state:<12} STEP {step_txt:<6} PROFILE {profile}",
-        "engines": f"R ENG {r_eng:<10} L ENG {l_eng:<10} APU {apu:<8} UFC {ufc}",
+        "engines": f"L RPM {rpm_txt:<5} AUTO {start_mode_txt:<10} THRESH {self._cold_rpm_threshold:.0f}%",
         "action": f"ACTION {getattr(self, '_cold_last_action', 'READY')}",
-        "mode": f"DISPLAY {mode:<5}  SUPERVISE ACTIONS / MANUAL IFF REQUIRED",
+        "mode": f"R ENG {r_eng:<9} L ENG {l_eng:<9} APU {apu:<8} UFC {ufc} DISPLAY {mode}",
     }
 
 
@@ -717,9 +855,9 @@ def _cold_set_cell(self, key: str, text: str):
 def _cold_log(self, message: str):
     ts = time.strftime("%H:%M:%S", time.localtime())
     try:
-        self._key_press_log.append((ts, f"COLD:{message}"))
+        self._key_press_log.append((ts, f"STARTUP:{message}"))
         if len(self._key_press_log) > 50:
             self._key_press_log.pop(0)
-        self.keyLogUpdated.emit(ts, f"COLD:{message}")
+        self.keyLogUpdated.emit(ts, f"STARTUP:{message}")
     except Exception:
         pass
