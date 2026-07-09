@@ -3,13 +3,15 @@
 
 Logic:
 - The normal UFC startup animation is not a program-boot splash.
+- Before any accepted DCS-BIOS signal, the touch panel shows a centered
+  "US NAVY" waiting logo.
 - The app waits for engine RPM telemetry.  LOCAL ICP is considered available only
   when either engine reaches the configured threshold.
-- If either engine RPM >= threshold: play the UFC startup animation once, then
-  enter/keep LOCAL ICP.
-- If both engine RPM values are known and both are below threshold: defer the
-  startup animation.  Cold-start page access is allowed by tapping SETTINGS
-  three times.
+- If either engine RPM >= threshold: hide the waiting logo, play the UFC startup
+  animation once, then enter/keep LOCAL ICP.
+- If both engine RPM values are known and both are below threshold: hide the
+  waiting logo and defer the startup animation.  Cold-start page access is
+  allowed by tapping SETTINGS three times.
 - The cold-start page is independent of SYSTEMS option 4 and has priority over
   LOCAL ICP while armed/running/holding; it only returns to LOCAL ICP after abort
   or complete.
@@ -24,6 +26,8 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ufc.config import load_config, save_config
 from ufc.dcs_bios import send_dcs_bios
@@ -191,6 +195,7 @@ def patch_cold_start(UFCKeypadWindowClass):
         orig_init_ui(self)
         self._cold_start_setup_state()
         self._init_cold_start_page()
+        self._cold_install_wait_logo()
         self._show_page(self._current_page)
 
     def on_cell_click(self, pos):
@@ -227,6 +232,8 @@ def patch_cold_start(UFCKeypadWindowClass):
     for name, fn in {
         "_cold_start_setup_state": _cold_start_setup_state,
         "_init_cold_start_page": _init_cold_start_page,
+        "_cold_install_wait_logo": _cold_install_wait_logo,
+        "_cold_hide_wait_logo": _cold_hide_wait_logo,
         "_cold_on_dcs_signal": _cold_on_dcs_signal,
         "_cold_handle_settings_tap": _cold_handle_settings_tap,
         "_cold_play_startup_animation": _cold_play_startup_animation,
@@ -279,6 +286,8 @@ def _cold_start_setup_state(self):
     self._cold_right_rpm = None
     self._cold_detected_mode = STARTUP_MODE_UNKNOWN
     self._cold_first_mode_decided = False
+    self._cold_dcs_seen = False
+    self._cold_wait_logo_overlay = None
     self._cold_start_anim_played = False
     self._cold_hidden_tap_count = 0
     self._cold_hidden_tap_at = 0.0
@@ -296,6 +305,76 @@ def _cold_start_setup_state(self):
     self._cold_detect_timer = QTimer(self)
     self._cold_detect_timer.timeout.connect(self._cold_poll_detection)
     self._cold_detect_timer.start(1000)
+
+
+def _cold_install_wait_logo(self):
+    """Show a simple centered US NAVY waiting logo until the first DCS-BIOS signal."""
+    if getattr(self, "_cold_dcs_seen", False):
+        return
+    old = getattr(self, "_cold_wait_logo_overlay", None)
+    if old is not None:
+        try:
+            old.raise_()
+            return
+        except Exception:
+            pass
+
+    overlay = QWidget(self)
+    overlay.setObjectName("coldDcsWaitLogo")
+    overlay.setGeometry(self.rect())
+    overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    overlay.setStyleSheet("""
+        QWidget#coldDcsWaitLogo {
+            background: #020403;
+        }
+        QLabel#navyLogo {
+            color: #d7f3df;
+            letter-spacing: 8px;
+        }
+        QLabel#navySub {
+            color: rgba(190, 255, 205, 150);
+            letter-spacing: 2px;
+        }
+    """)
+
+    layout = QVBoxLayout(overlay)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(10)
+    layout.addStretch(1)
+
+    logo = QLabel("US NAVY", overlay)
+    logo.setObjectName("navyLogo")
+    logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    logo_font = QFont("Arial", 56, QFont.Weight.Black)
+    logo_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 7)
+    logo.setFont(logo_font)
+    layout.addWidget(logo)
+
+    sub = QLabel("WAITING FOR DCS-BIOS", overlay)
+    sub.setObjectName("navySub")
+    sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    sub_font = QFont("Consolas", 15, QFont.Weight.DemiBold)
+    sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2)
+    sub.setFont(sub_font)
+    layout.addWidget(sub)
+
+    layout.addStretch(1)
+
+    self._cold_wait_logo_overlay = overlay
+    overlay.show()
+    overlay.raise_()
+
+
+def _cold_hide_wait_logo(self):
+    overlay = getattr(self, "_cold_wait_logo_overlay", None)
+    self._cold_wait_logo_overlay = None
+    if overlay is None:
+        return
+    try:
+        overlay.hide()
+        overlay.deleteLater()
+    except Exception:
+        pass
 
 
 def _init_cold_start_page(self):
@@ -363,7 +442,12 @@ def _cold_detect_startup_mode(self) -> str:
 
 
 def _cold_on_dcs_signal(self, field_name, value):
-    """First valid RPM state decides animation timing. Any engine >= threshold starts LOCAL ICP."""
+    """First accepted DCS-BIOS signal hides US NAVY wait logo; RPM then gates animation."""
+    if not getattr(self, "_cold_dcs_seen", False):
+        self._cold_dcs_seen = True
+        self._cold_hide_wait_logo()
+        self._cold_log(f"DCS-BIOS FIRST SIGNAL {field_name}")
+
     if getattr(self, "_cold_first_mode_decided", False):
         return
     mode = self._cold_detect_startup_mode()
@@ -371,11 +455,11 @@ def _cold_on_dcs_signal(self, field_name, value):
         return
     self._cold_first_mode_decided = True
     if mode == STARTUP_MODE_NON_COLD:
-        self._cold_log(f"FIRST DATA RPM L={self._cold_left_rpm} R={self._cold_right_rpm}: LOCAL ICP")
+        self._cold_log(f"FIRST RPM L={self._cold_left_rpm} R={self._cold_right_rpm}: LOCAL ICP")
         self._show_page("local_icp")
         self._cold_play_startup_animation(return_page="local_icp")
     else:
-        self._cold_log(f"FIRST DATA RPM L={self._cold_left_rpm} R={self._cold_right_rpm}: COLD PAGE ACCESS")
+        self._cold_log(f"FIRST RPM L={self._cold_left_rpm} R={self._cold_right_rpm}: COLD PAGE ACCESS")
 
 
 def _cold_handle_settings_tap(self) -> bool:
@@ -421,7 +505,8 @@ def _cold_poll_detection(self):
 
 def _cold_handle_click(self, pos):
     if pos in ((0, 0), (1, 0)):
-        if self._cold_state in ("complete", "aborted") or self._cold_max_rpm() is not None and self._cold_max_rpm() >= self._cold_rpm_threshold:
+        max_rpm = self._cold_max_rpm()
+        if self._cold_state in ("complete", "aborted") or (max_rpm is not None and max_rpm >= self._cold_rpm_threshold):
             self._show_page("local_icp")
         else:
             self._cold_last_action = "COLD PAGE PRIORITY / LOCAL ICP LOCKED"
