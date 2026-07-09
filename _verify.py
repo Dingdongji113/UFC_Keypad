@@ -150,16 +150,20 @@ assert "#d7f3df" not in w._cold_status_cells["title"].styleSheet().lower()
 assert "rgb(0" in w._cold_status_cells["title"].styleSheet().lower()
 assert set(w._cold_cells.keys()) == {CDE.P_DAY, CDE.P_NIGHT, CSS.P_LAND, CSS.P_CV, CDE.P_START, CDE.P_RESET}
 
-# Four setup buttons are centered as one row in the 1024 px design layout.
 setup_buttons = [w._cold_cells[CDE.P_DAY], w._cold_cells[CDE.P_NIGHT], w._cold_cells[CSS.P_LAND], w._cold_cells[CSS.P_CV]]
 row_left = min(c.geometry().x() for c in setup_buttons)
 row_right = max(c.geometry().x() + c.geometry().width() for c in setup_buttons)
 assert abs((row_left + row_right) / 2 - 512) <= 4, (row_left, row_right)
 
 steps = w._cold_step_list()
+step_names = [step[0] for step in steps]
+assert len(steps) == 21
 assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
+assert step_names[10:13] == ["APU OFF", "BRIGHTNESS", "CANOPY CLOSE"], step_names
+assert step_names[16] == "ECM REC", step_names
+assert step_names.index("BRIGHTNESS") == step_names.index("APU OFF") + 1
 assert not any(step[0] == "DISPLAY MODE" for step in steps)
-assert not any(label in [step[0] for step in steps] for label in ["PAUSE", "SKIP", "ABORT"])
+assert not any(label in step_names for label in ["PAUSE", "SKIP", "ABORT"])
 w._cold_refresh_ui()
 assert w._cold_cells[CDE.P_DAY].isVisible()
 assert w._cold_cells[CDE.P_NIGHT].isVisible()
@@ -192,7 +196,6 @@ w.on_cell_click(CDE.P_START)
 assert w._cold_state == "armed"
 w.on_cell_click(CDE.P_START)
 assert w._cold_state in ("running", "wait_user")
-# Jump to the APU READY user step to verify reset/setup preserves the actual step title.
 w._cold_step_index = 3
 w._cold_state = "wait_user"
 saved_step = w._cold_step_index
@@ -213,7 +216,7 @@ assert w._cold_last_action == "APU READY?"
 assert "CONFIRM SETUP" not in w._cold_status_lines()["step"]
 print("[4b] COLD UI OK  (green labels, centered setup buttons, reset keeps real step)")
 
-# ---- 4c. 冷启动配置键 + battery ON 修正 ----
+# ---- 4c. 冷启动配置键 + command fixups ----
 cs_cfg = CS._merged_config()
 required_controls = {
     "battery_on", "apu_start", "right_engine_crank", "left_engine_crank", "apu_off",
@@ -225,7 +228,14 @@ assert "sequence" in cs_cfg["cold_start_controls"]["bleed_air_cycle"]
 assert cs_cfg.get("cold_start_left_rpm_threshold") == 60
 battery_entries = w._cold_entries_from_config("battery_on")
 assert battery_entries and battery_entries[0]["id"] == "BATTERY_SW" and battery_entries[0]["value"] == 2
-print("[4c] COLD START CONFIG OK  (battery ON value forced to 2)")
+canopy_entries = w._cold_entries_from_config("canopy_close")
+assert canopy_entries == [
+    {"id": "CANOPY_SW", "value": 0, "delay_ms": 6500},
+    {"id": "CANOPY_SW", "value": 1, "delay_ms": 100},
+]
+ecm_entries = w._cold_entries_from_config("ecm_receive")
+assert ecm_entries == [{"id": "ECM_MODE_SW", "value": 3, "delay_ms": 500}]
+print("[4c] COLD START CONFIG OK  (battery/canopy/ECM command values fixed)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 import ufc.widgets as W
