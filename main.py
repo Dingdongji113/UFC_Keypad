@@ -77,10 +77,12 @@ def main():
         _bootstrap_log("PyQt6 QApplication imported")
 
         _bootstrap_log("importing startup/ui/windowing/cold_start modules")
+        from ufc.ifei_rpm import install_ifei_rpm_fallback
         from ufc.startup import attach_startup_style_settings, install_startup_overlay
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
         from ufc.cold_start import patch_cold_start
+        install_ifei_rpm_fallback()
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         _bootstrap_log("startup/ui/windowing/cold_start modules imported")
