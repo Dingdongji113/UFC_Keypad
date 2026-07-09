@@ -19,6 +19,7 @@ UFC_CVTRIM.last_send = 0
 UFC_CVTRIM.send_interval = 0.25
 UFC_CVTRIM.pending_release = nil
 UFC_CVTRIM.log_path = nil
+UFC_CVTRIM.last_command = 'none'
 
 local function now_time()
     return LoGetModelTime and LoGetModelTime() or socket.gettime()
@@ -59,6 +60,19 @@ local function json_number(name, value)
     return string.format('"%s":null', name)
 end
 
+local function json_string_value(name, value)
+    value = tostring(value or ''):gsub('\\', '\\\\'):gsub('"', '\\"')
+    return string.format('"%s":"%s"', name, value)
+end
+
+local function draw_arg(arg)
+    if LoGetAircraftDrawArgumentValue then
+        local ok, value = pcall(LoGetAircraftDrawArgumentValue, arg)
+        if ok and type(value) == 'number' then return value end
+    end
+    return nil
+end
+
 local function pick_number(t, names)
     if type(t) ~= 'table' then return nil end
     for _, name in ipairs(names) do
@@ -88,10 +102,8 @@ local function get_trim_deg()
         return raw
     end
     if LoGetAircraftDrawArgumentValue then
-        -- Conservative probes. If they are wrong on a build, the Python side will
-        -- show the value and stop if it cannot converge.
         for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
-            local v = LoGetAircraftDrawArgumentValue(arg)
+            local v = draw_arg(arg)
             if type(v) == 'number' and math.abs(v) > 0.001 then
                 return v * 20.0
             end
@@ -100,14 +112,33 @@ local function get_trim_deg()
     return nil
 end
 
+local function append_probe_args(parts)
+    -- DCS-BIOS source-confirmed key arguments:
+    -- 511 = EJECTION_SEAT_ARMED, 248 = ECM_MODE_SW, 276/267 = RWR lights.
+    table.insert(parts, json_number('seat_armed_arg_511', draw_arg(511)))
+    table.insert(parts, json_number('ecm_mode_arg_248', draw_arg(248)))
+    table.insert(parts, json_number('rwr_power_light_arg_276', draw_arg(276)))
+    table.insert(parts, json_number('rwr_enable_light_arg_267', draw_arg(267)))
+    table.insert(parts, json_number('fcs_reset_arg_349', draw_arg(349)))
+    table.insert(parts, json_number('canopy_sw_arg_453', draw_arg(453)))
+    -- Candidate stabilator / trim draw args. probe_hornet_bridge.py will show which one moves.
+    for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
+        table.insert(parts, json_number('trim_arg_' .. tostring(arg), draw_arg(arg)))
+    end
+end
+
 local function send_telemetry()
     local weight = get_weight_lbs()
     local trim = get_trim_deg()
     local parts = {
         '"type":"cv_trim"',
+        json_string_value('bridge', 'loaded'),
+        json_string_value('last_command', UFC_CVTRIM.last_command),
+        json_number('time', now_time()),
         json_number('gross_weight_lbs', weight),
         json_number('stab_trim_deg', trim)
     }
+    append_probe_args(parts)
     tx:send('{' .. table.concat(parts, ',') .. '}')
 end
 
@@ -171,10 +202,12 @@ local function handle_clickable(msg)
     local dev = GetDevice and GetDevice(device_id) or nil
     if not dev or not dev.performClickableAction then
         log('no clickable device/action for ' .. label .. ' device=' .. tostring(device_id))
+        UFC_CVTRIM.last_command = 'clickable failed no device ' .. tostring(label)
         return
     end
     dev:performClickableAction(command, value)
-    log(string.format('clickable %s dev=%s cmd=%s value=%s', label, tostring(device_id), tostring(command), tostring(value)))
+    UFC_CVTRIM.last_command = string.format('clickable %s dev=%s cmd=%s value=%s', label, tostring(device_id), tostring(command), tostring(value))
+    log(UFC_CVTRIM.last_command)
     if release_value ~= nil and hold_ms > 0 then
         UFC_CVTRIM.pending_release = {
             time = now_time() + hold_ms / 1000.0,
@@ -194,7 +227,8 @@ local function handle_trim(msg)
     local cmd = command_constant(direction)
     if type(cmd) ~= 'number' then return end
     LoSetCommand(cmd, 1)
-    log('trim pulse ' .. direction .. ' cmd=' .. tostring(cmd))
+    UFC_CVTRIM.last_command = 'trim pulse ' .. direction .. ' cmd=' .. tostring(cmd)
+    log(UFC_CVTRIM.last_command)
     UFC_CVTRIM.pending_release = {
         time = now_time() + pulse_ms / 1000.0,
         type = 'trim',
@@ -203,12 +237,20 @@ local function handle_trim(msg)
     }
 end
 
+local function handle_ping(msg)
+    UFC_CVTRIM.last_command = 'ping received'
+    log('ping received')
+    send_telemetry()
+end
+
 local function handle_command(msg)
     local typ = json_string(msg, 'type')
     if typ == 'clickable' then
         handle_clickable(msg)
     elseif typ == 'trim' then
         handle_trim(msg)
+    elseif typ == 'ping' then
+        handle_ping(msg)
     else
         log('unknown command: ' .. tostring(msg))
     end
@@ -228,16 +270,18 @@ local function release_pending()
     if now_time() < p.time then return end
     if p.type == 'clickable' then
         p.device:performClickableAction(p.command, p.value)
-        log(string.format('clickable release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value)))
+        UFC_CVTRIM.last_command = string.format('clickable release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value))
+        log(UFC_CVTRIM.last_command)
     elseif p.type == 'trim' then
         local stop_cmd = command_stop_constant(p.direction)
         if type(stop_cmd) == 'number' then
             LoSetCommand(stop_cmd, 1)
-            log('trim stop ' .. p.direction .. ' stop_cmd=' .. tostring(stop_cmd))
+            UFC_CVTRIM.last_command = 'trim stop ' .. p.direction .. ' stop_cmd=' .. tostring(stop_cmd)
         else
             LoSetCommand(p.cmd, 0)
-            log('trim release ' .. p.direction .. ' cmd=' .. tostring(p.cmd))
+            UFC_CVTRIM.last_command = 'trim release ' .. p.direction .. ' cmd=' .. tostring(p.cmd)
         end
+        log(UFC_CVTRIM.last_command)
     end
     UFC_CVTRIM.pending_release = nil
 end
