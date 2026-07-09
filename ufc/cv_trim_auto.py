@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
-"""CV catapult trim automation.
+"""CV catapult trim and direct cockpit command bridge.
 
-The DCS-BIOS FA-18C module does not expose board weight or current stabilator
-trim as normal DCS-BIOS fields.  This module therefore uses a small optional
-Export.lua bridge:
+Some FA-18C cold-start actions are unreliable through DCS-BIOS alone on the
+user's install, while board weight and stabilator trim are not exposed as normal
+DCS-BIOS fields.  This module therefore uses an optional Export.lua bridge:
 
 - UDP 5518: DCS -> UFC_Keypad telemetry JSON
-- UDP 5519: UFC_Keypad -> DCS trim pulse JSON
+- UDP 5519: UFC_Keypad -> DCS command JSON
 
-The bridge is intentionally isolated from the normal DCS-BIOS receiver so cold
-start still works without it.  If telemetry or command support is missing, the
-CAT TRIM step stops and asks for manual confirmation rather than blindly firing
-trim commands.
+The normal DCS-BIOS command is still sent first for cockpit controls.  The bridge
+is a second path for controls that have repeatedly failed in practice, and a
+required path for automatic CV catapult trim.
 """
 from __future__ import annotations
 
 import json
 import math
+import os
 import socket
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 from PyQt6.QtCore import QTimer
 
@@ -102,6 +102,34 @@ _RECEIVER = CVTrimTelemetryReceiver()
 _COMMAND_SOCK: Optional[socket.socket] = None
 
 
+def _debug_log(message: str) -> None:
+    try:
+        path = os.path.join(os.getcwd(), "cv_trim_debug.log")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(time.strftime("[%Y-%m-%d %H:%M:%S] ") + str(message) + "\n")
+    except Exception:
+        pass
+
+
+def _command_sock() -> socket.socket:
+    global _COMMAND_SOCK
+    if _COMMAND_SOCK is None:
+        _COMMAND_SOCK = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    return _COMMAND_SOCK
+
+
+def _send_bridge_payload(payload: Dict[str, Any]) -> bool:
+    try:
+        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        _command_sock().sendto(data, ("127.0.0.1", COMMAND_PORT))
+        _debug_log(f"bridge send {payload}")
+        return True
+    except Exception as exc:
+        _debug_log(f"bridge send failed {payload}: {exc}")
+        print(f"[CV-TRIM] Bridge command send failed: {exc}")
+        return False
+
+
 def _pick_float(payload: Dict[str, Any], *names: str) -> Optional[float]:
     for name in names:
         value = payload.get(name)
@@ -126,21 +154,30 @@ def cv_trim_target_deg(weight_lbs: float) -> float:
     return 19.0
 
 
+def send_direct_clickable(device: int, command: int, value: float, *, label: str = "", hold_ms: int = 0,
+                          release_value: Optional[float] = None) -> bool:
+    """Send a direct clickable cockpit action through the Export.lua bridge."""
+    payload: Dict[str, Any] = {
+        "type": "clickable",
+        "device": int(device),
+        "command": int(command),
+        "value": float(value),
+    }
+    if label:
+        payload["label"] = str(label)
+    if hold_ms:
+        payload["hold_ms"] = int(hold_ms)
+    if release_value is not None:
+        payload["release_value"] = float(release_value)
+    return _send_bridge_payload(payload)
+
+
 def send_cv_trim_pulse(direction: str, pulse_ms: int = TRIM_PULSE_MS) -> bool:
     """Send a trim pulse request to the optional DCS Export bridge."""
-    global _COMMAND_SOCK
     direction = str(direction).lower().strip()
     if direction not in ("up", "down"):
         return False
-    try:
-        if _COMMAND_SOCK is None:
-            _COMMAND_SOCK = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        payload = json.dumps({"type": "trim", "direction": direction, "pulse_ms": int(pulse_ms)}).encode("utf-8")
-        _COMMAND_SOCK.sendto(payload, ("127.0.0.1", COMMAND_PORT))
-        return True
-    except Exception as exc:
-        print(f"[CV-TRIM] Command send failed: {exc}")
-        return False
+    return _send_bridge_payload({"type": "trim", "direction": direction, "pulse_ms": int(pulse_ms)})
 
 
 def install_cv_trim_automation(UFCKeypadWindowClass) -> None:
@@ -183,13 +220,14 @@ def install_cv_trim_automation(UFCKeypadWindowClass) -> None:
                 return
             snap = self._cv_trim_snapshot()
             age = time.time() - snap.timestamp if snap.timestamp else 999.0
+            _debug_log(f"cat trim tick weight={snap.weight_lbs} trim={snap.trim_deg} age={age:.2f} raw={snap.raw}")
             if snap.weight_lbs is None or snap.trim_deg is None or age > 2.0:
                 self._cold_state = "wait_user"
                 self._cold_exec_phase = "USER"
                 self._cold_last_action = "CAT TRIM DATA?"
                 self._cold_step_detail = (
-                    "No fresh CV trim telemetry. Install dcs_export/UFC_Keypad_CVTrim.lua, "
-                    "or set catapult trim manually and press START."
+                    "No fresh CV trim telemetry. Check dcs_export/UFC_Keypad_CVTrim.lua and cv_trim_debug.log. "
+                    "Set catapult trim manually and press START if needed."
                 )
                 self._cold_log("CAT TRIM telemetry missing; fallback to user confirmation")
                 self._cold_refresh_ui()
