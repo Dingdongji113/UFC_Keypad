@@ -38,7 +38,7 @@ print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
 # ---- 3. 构造主窗口 + SettingsWindow ----
 from PyQt6.QtWidgets import QApplication, QLabel
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, QEventLoop, QTimer
 from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
 
@@ -216,7 +216,7 @@ assert w._cold_last_action == "APU READY?"
 assert "CONFIRM SETUP" not in w._cold_status_lines()["step"]
 print("[4b] COLD UI OK  (green labels, centered setup buttons, reset keeps real step)")
 
-# ---- 4c. 冷启动配置键 + command fixups ----
+# ---- 4c. 冷启动配置键 + command fixups + sequenced brightness ----
 cs_cfg = CS._merged_config()
 required_controls = {
     "battery_on", "apu_start", "right_engine_crank", "left_engine_crank", "apu_off",
@@ -234,8 +234,35 @@ assert canopy_entries == [
     {"id": "CANOPY_SW", "value": 1, "delay_ms": 100},
 ]
 ecm_entries = w._cold_entries_from_config("ecm_receive")
-assert ecm_entries == [{"id": "ECM_MODE_SW", "value": 3, "delay_ms": 500}]
-print("[4c] COLD START CONFIG OK  (battery/canopy/ECM command values fixed)")
+assert ecm_entries == [{"id": "ECM_MODE_SW", "value": 1, "delay_ms": 500}]
+
+w._cold_display_mode = "day"
+brightness_entries = w._cold_display_brightness_entries()
+brightness_ids = [entry["id"] for entry in brightness_entries]
+for required_id in [
+    "LEFT_DDI_BRT_SELECT", "RIGHT_DDI_BRT_SELECT", "AMPCD_NIGHT_DAY", "HUD_SYM_BRT_SELECT",
+    "LEFT_DDI_BRT_CTL", "RIGHT_DDI_BRT_CTL", "AMPCD_BRT_CTL", "HUD_SYM_BRT",
+]:
+    assert required_id in brightness_ids, (required_id, brightness_ids)
+assert brightness_ids.index("LEFT_DDI_BRT_SELECT") < brightness_ids.index("LEFT_DDI_BRT_CTL")
+assert brightness_ids.index("HUD_SYM_BRT_SELECT") < brightness_ids.index("HUD_SYM_BRT")
+
+import ufc.dcs_bios as DB
+sent_brightness = []
+_orig_db_send = DB.send_dcs_bios
+try:
+    DB.send_dcs_bios = lambda identifier, value: sent_brightness.append((identifier, value)) or True
+    w._cold_sequence_token += 1
+    w._cold_state = "running"
+    w._cold_apply_display_brightness()
+    loop = QEventLoop()
+    QTimer.singleShot(900, loop.quit)
+    loop.exec()
+finally:
+    DB.send_dcs_bios = _orig_db_send
+assert [item[0] for item in sent_brightness] == brightness_ids, sent_brightness
+assert w._cold_display_brightness_applied is True
+print("[4c] COLD START CONFIG OK  (battery/canopy/ECM + sequenced brightness commands fixed)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 import ufc.widgets as W
