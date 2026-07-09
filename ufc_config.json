@@ -1,4 +1,67 @@
 {
   "native_touch": true,
-  "startup_style": "ufc_bit"
+  "startup_style": "ufc_bit",
+  "cold_start_mode": "assist",
+  "cold_start_profile": "land",
+  "cold_start_display_mode": "day",
+  "display_brightness_presets": {
+    "day": {
+      "lddi": 80,
+      "rddi": 80,
+      "ampcd": 80,
+      "hud": 70
+    },
+    "night": {
+      "lddi": 25,
+      "rddi": 25,
+      "ampcd": 20,
+      "hud": 25
+    }
+  },
+  "cold_start_controls": {
+    "battery_on": {
+      "id": "",
+      "value": 1
+    },
+    "apu_start": {
+      "id": "",
+      "value": 1
+    },
+    "right_engine_crank": {
+      "id": "",
+      "value": 1
+    },
+    "left_engine_crank": {
+      "id": "",
+      "value": 1
+    },
+    "apu_off": {
+      "id": "",
+      "value": 0
+    },
+    "ins_land": {
+      "id": "",
+      "value": 2
+    },
+    "ins_carrier": {
+      "id": "",
+      "value": 1
+    },
+    "display_lddi": {
+      "id": "",
+      "value_type": "analog"
+    },
+    "display_rddi": {
+      "id": "",
+      "value_type": "analog"
+    },
+    "display_ampcd": {
+      "id": "",
+      "value_type": "analog"
+    },
+    "display_hud": {
+      "id": "",
+      "value_type": "analog"
+    }
+  }
 }
