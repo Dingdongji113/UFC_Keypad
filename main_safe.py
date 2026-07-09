@@ -78,6 +78,8 @@ def main():
         # 先导入底层模块并打补丁，再导入 ui。
         import ufc.input as input_mod
         import ufc.dcs_bios as dcs_mod
+        from ufc.ifei_rpm import install_ifei_rpm_fallback
+        install_ifei_rpm_fallback()
 
         def _noop(*args, **kwargs):
             return False
