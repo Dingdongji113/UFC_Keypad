@@ -18,7 +18,7 @@ mods = [
     f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py",
     f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/realtime_rpm.py",
-    f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/cold_setup_split.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -29,7 +29,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import PyQt6  # noqa
 for name in ["constants", "crashlog", "config", "fonts", "morse",
              "colors", "dcs_bios", "input", "widgets", "startup",
-             "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry", "ui"]:
+             "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry", "cold_setup_split", "ui"]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
@@ -45,8 +45,10 @@ from ufc.ifei_rpm import install_ifei_rpm_fallback
 from ufc.realtime_rpm import install_realtime_rpm_callbacks
 import ufc.cold_start as CS
 import ufc.cold_direct_entry as CDE
+import ufc.cold_setup_split as CSS
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
+from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.startup import (
     STARTUP_STYLE_ANIME_MILLENNIUM,
     STARTUP_STYLE_UFC_BIT,
@@ -59,6 +61,7 @@ install_ifei_rpm_fallback()
 install_realtime_rpm_callbacks()
 patch_cold_start(UFCKeypadWindow)
 install_cold_direct_entry(UFCKeypadWindow)
+install_split_land_cv_setup(UFCKeypadWindow)
 w = UFCKeypadWindow()
 startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
 assert isinstance(startup, UFCBitStartupOverlay)
@@ -108,7 +111,7 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 独立 setup 页 + 大 START + 双击 RESET 保留步数 ----
+# ---- 4b. 独立 setup 页 + LAND/CV 分开 + 大 START + 双击 RESET 保留步数 ----
 w.dcs_bios.latest.clear()
 w._cold_reset_session_state("verify start")
 assert w._cold_state == "idle"
@@ -119,6 +122,12 @@ w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
 assert w._cold_last_action == "WAIT RPM"
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
+w._cold_refresh_ui()
+assert not w._cold_cells[CDE.P_DAY].isVisible()
+assert not w._cold_cells[CDE.P_NIGHT].isVisible()
+assert not w._cold_cells[CSS.P_LAND].isVisible()
+assert not w._cold_cells[CSS.P_CV].isVisible()
+assert not w._cold_cells[CDE.P_START].isVisible()
 
 w._update_display("left_engine_rpm", "  0")
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
@@ -132,17 +141,27 @@ assert "L 000.0%" in lines["rpm"] and "R 000.0%" in lines["rpm"]
 assert "CONFIRM 0/2" in lines["hint"]
 assert set(w._cold_status_cells.keys()) == {"title", "rpm", "step", "hint", "status"}
 assert all(isinstance(v, QLabel) for v in w._cold_status_cells.values())
-assert set(w._cold_cells.keys()) == {CDE.P_DAY, CDE.P_NIGHT, CDE.P_PROFILE, CDE.P_START, CDE.P_RESET}
+assert set(w._cold_cells.keys()) == {CDE.P_DAY, CDE.P_NIGHT, CSS.P_LAND, CSS.P_CV, CDE.P_START, CDE.P_RESET}
 steps = w._cold_step_list()
 assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
 assert not any(step[0] == "DISPLAY MODE" for step in steps)
 assert not any(label in [step[0] for step in steps] for label in ["PAUSE", "SKIP", "ABORT"])
+w._cold_refresh_ui()
+assert w._cold_cells[CDE.P_DAY].isVisible()
+assert w._cold_cells[CDE.P_NIGHT].isVisible()
+assert w._cold_cells[CSS.P_LAND].isVisible()
+assert w._cold_cells[CSS.P_CV].isVisible()
+assert w._cold_cells[CDE.P_START].isVisible()
+assert not w._cold_cells[CDE.P_RESET].isVisible()
 
+# DAY/NIGHT and LAND/CV are independent setup-only choices; START must confirm twice before checklist unlock.
 w.on_cell_click(CDE.P_NIGHT)
 assert w._cold_display_mode == "night"
 assert w._cold_entry_confirm_count == 0
-w.on_cell_click(CDE.P_PROFILE)
-assert w._cold_profile in ("land", "carrier")
+w.on_cell_click(CSS.P_LAND)
+assert w._cold_profile == "land"
+w.on_cell_click(CSS.P_CV)
+assert w._cold_profile == "carrier"
 w.on_cell_click(CDE.P_START)
 assert w._cold_entry_stage == CDE.ENTRY_SETUP
 assert w._cold_entry_confirm_count == 1
@@ -156,7 +175,8 @@ assert w._cold_status_lines()["title"] == "F/A-18C COLD START"
 w._cold_refresh_ui()
 assert not w._cold_cells[CDE.P_DAY].isVisible()
 assert not w._cold_cells[CDE.P_NIGHT].isVisible()
-assert not w._cold_cells[CDE.P_PROFILE].isVisible()
+assert not w._cold_cells[CSS.P_LAND].isVisible()
+assert not w._cold_cells[CSS.P_CV].isVisible()
 assert w._cold_cells[CDE.P_START].isVisible()
 assert w._cold_cells[CDE.P_RESET].isVisible()
 
@@ -205,7 +225,7 @@ assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w._cold_reset_session_state("verify suffix parse")
 w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (separate setup, START-only checklist, reset keeps step)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (separate setup, split LAND/CV, START-only checklist, reset keeps step)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
