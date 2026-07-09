@@ -108,41 +108,50 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 冷启动入口 + 任意一发 RPM gating + 断线重置 ----
+# ---- 4b. 极简冷启动页 + 任意一发 RPM gating + 断线重置 ----
 w.dcs_bios.latest.clear()
 w._cold_reset_session_state("verify start")
+assert w._cold_state == "idle"
+assert w._cold_step_index == -1
 w._show_page("local_icp")
 w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
-assert w._cold_last_action == "WAIT ENGINE RPM DATA"
+assert w._cold_last_action == "WAIT RPM"
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
 
 # fresh left low only -> still unknown
 w._update_display("left_engine_rpm", "  0")
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
-# fresh both low -> auto cold page
+# fresh both low -> auto cold page, progress still zeroed
 w._cold_first_mode_decided = False
 w._update_display("right_engine_rpm", "  0")
 assert w._current_page == "cold_start"
-assert w._cold_last_action == "AUTO COLD START ENTRY"
-assert "LIVE IFEI RPM" in w._cold_status_lines()["engines"]
-assert "00.0%" in w._cold_status_lines()["engines"]
+assert w._cold_last_action == "COLD START READY"
+lines = w._cold_status_lines()
+assert "L 000.0%" in lines["rpm"] and "R 000.0%" in lines["rpm"]
+assert set(w._cold_status_cells.keys()) == {"title", "rpm", "step", "hint", "status"}
 steps = w._cold_step_list()
 assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
 w._cold_abort()
+assert w._cold_step_index == -1
+assert w._cold_state == "aborted"
 
-# Simulate leaving a cold mission: old latest still contains 0/0, but timeout reset must remove it.
+# Simulate leaving a cold mission: old latest still contains 0/0, but timeout reset must remove it and clear step progress.
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
 w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
+w._cold_step_index = 8
+w._cold_state = "running"
 w._cold_reset_session_state("verify mission switch")
 assert "IFEI_RPM_L" not in w.dcs_bios.latest
 assert "IFEI_RPM_R" not in w.dcs_bios.latest
+assert w._cold_step_index == -1
+assert w._cold_state == "idle"
 w._show_page("local_icp")
 w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
-assert w._cold_last_action == "WAIT ENGINE RPM DATA"
+assert w._cold_last_action == "WAIT RPM"
 # Now the new hot mission sends fresh right RPM. It must override old cold state and become non-cold.
 w._cold_first_mode_decided = False
 w._update_display("right_engine_rpm", "  75")
@@ -152,7 +161,7 @@ assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w._cold_reset_session_state("verify suffix parse")
 w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (fresh RPM only, live RPM display, APU wait 5s, min anim 5s)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (minimal page, progress reset, live RPM, APU wait 5s)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
