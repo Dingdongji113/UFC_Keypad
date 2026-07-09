@@ -89,17 +89,24 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 冷启动序列器基础路径 ----
+# ---- 4b. 启动管理器基础路径 + 左发 RPM 自动判定 ----
+w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
 w._show_page("select")
 w.on_cell_click((201, 3))
 assert w._current_page == "cold_start"
+assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
 w.on_cell_click((300, 4))  # DAY
 assert w._cold_display_mode == "day"
 w.on_cell_click((300, 5))  # NIGHT
 assert w._cold_display_mode == "night"
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
-print("[4b] COLD START UI OK  (select option, DAY/NIGHT, ARM)")
+assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
+w._cold_abort()
+w.dcs_bios.latest["IFEI_RPM_L"] = "  75"
+w._cold_detect_startup_mode()
+assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
+print("[4b] STARTUP MANAGER OK  (left RPM <60 cold, >=60 non-cold, DAY/NIGHT, ARM)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
@@ -110,7 +117,8 @@ required_controls = {
 }
 assert required_controls.issubset(set(cs_cfg["cold_start_controls"].keys()))
 assert "sequence" in cs_cfg["cold_start_controls"]["bleed_air_cycle"]
-print("[4c] COLD START CONFIG OK  (supervised controls + bleed-air sequence present)")
+assert cs_cfg.get("cold_start_left_rpm_threshold") == 60
+print("[4c] COLD START CONFIG OK  (supervised controls + bleed-air sequence + RPM threshold present)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 # 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
@@ -172,6 +180,7 @@ from ufc.config import load_config, save_config
 cfg = load_config()
 cfg.setdefault("startup_style", STARTUP_STYLE_UFC_BIT)
 cfg.setdefault("cold_start_display_mode", "day")
+cfg.setdefault("cold_start_left_rpm_threshold", 60)
 save_config(cfg)  # round-trip
 print(f"[10] CONFIG OK  (keys={sorted(cfg.keys())})")
 
