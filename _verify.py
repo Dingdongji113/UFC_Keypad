@@ -39,6 +39,7 @@ from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
+import ufc.cold_start as CS
 from ufc.cold_start import patch_cold_start
 from ufc.startup import (
     STARTUP_STYLE_ANIME_MILLENNIUM,
@@ -99,6 +100,17 @@ assert w._cold_display_mode == "night"
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
 print("[4b] COLD START UI OK  (select option, DAY/NIGHT, ARM)")
+
+# ---- 4c. 冷启动配置键 ----
+cs_cfg = CS._merged_config()
+required_controls = {
+    "battery_on", "apu_start", "right_engine_crank", "left_engine_crank", "apu_off",
+    "canopy_close", "bleed_air_cycle", "trim_reset", "fcs_reset", "ecm_receive",
+    "ins_land", "ins_carrier", "display_lddi", "display_rddi", "display_ampcd", "display_hud",
+}
+assert required_controls.issubset(set(cs_cfg["cold_start_controls"].keys()))
+assert "sequence" in cs_cfg["cold_start_controls"]["bleed_air_cycle"]
+print("[4c] COLD START CONFIG OK  (supervised controls + bleed-air sequence present)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 # 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
