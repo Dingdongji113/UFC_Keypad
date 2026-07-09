@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Minimal cold-start page and DCS-session lifecycle override.
+"""Minimal cold-start setup/checklist page and DCS-session lifecycle override.
 
-Design goals for this layer:
-- The cold-start page is a concise checklist screen, not a diagnostic dashboard.
-- DAY/NIGHT and LAND/CV are chosen before entering the checklist.
-- The setup screen requires two START confirmations before the checklist page is
-  unlocked.
-- L/R engine RPM display is live/fresh IFEI telemetry only.
-- APU START is followed by a mandatory 5-second interval before the right-engine
-  start path can continue.
-- DCS-BIOS timeout / mission exit resets all checklist progress. Step index and
-  current action are not persisted across missions.
+Current UI rule:
+- DAY/NIGHT and LAND/CV are selected on a separate setup screen before the cold
+  checklist is unlocked.
+- Setup requires two START confirmations.
+- The checklist screen has one large centered START button and one smaller RESET
+  button in the lower right.
+- PAUSE / SKIP / ABORT are intentionally removed from the cold-start page.
+- Non-button text is rendered as plain labels with no boxes/frames.
+- RESET requires two consecutive taps; it returns to setup while preserving the
+  current checklist step/progress.
+- DCS-BIOS timeout / mission exit resets all checklist progress.
 """
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ import time
 from typing import Callable, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QLabel
 
 from ufc.cold_start import (
     LEFT_RPM_INTERNAL,
@@ -34,15 +37,14 @@ MIN_STARTUP_ANIM_MS = 5000
 APU_TO_RIGHT_CRANK_MS = 5000
 
 P_START = (300, 0)
-P_PAUSE = (300, 1)
-P_SKIP = (300, 3)
-P_ABORT = (300, 2)
 P_DAY = (300, 4)
 P_NIGHT = (300, 5)
 P_PROFILE = (300, 6)
+P_RESET = (300, 7)
 
 ENTRY_SETUP = "setup"
 ENTRY_CHECKLIST = "checklist"
+RESET_TAP_WINDOW_SEC = 1.5
 
 
 def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
@@ -71,22 +73,55 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         self._cold_exec_phase = "IDLE"
         self._cold_last_action = "READY"
         self._cold_step_detail = "Press START twice to run cold-start checklist."
+        self._cold_setup_preserve_progress = False
+        self._cold_reset_tap_count = 0
+        self._cold_reset_tap_at = 0.0
         try:
             self._cold_log(f"PROGRESS RESET: {reason}")
         except Exception:
             pass
 
-    def _cold_enter_setup(self, reason: str = "SETUP") -> None:
-        """Enter pre-checklist setup: DAY/NIGHT + LAND/CV + double confirmation."""
-        self._cold_reset_progress(reason)
+    def _cold_enter_setup(self, reason: str = "SETUP", preserve_progress: bool = False) -> None:
+        """Enter the independent DAY/NIGHT + LAND/CV setup screen."""
+        if preserve_progress:
+            self._cold_sequence_token = getattr(self, "_cold_sequence_token", 0) + 1
+            if getattr(self, "_cold_state", "idle") in ("running", "animating"):
+                self._cold_state = "paused"
+            self._cold_setup_preserve_progress = True
+        else:
+            self._cold_reset_progress(reason)
+            self._cold_setup_preserve_progress = False
         self._cold_entry_stage = ENTRY_SETUP
         self._cold_entry_confirm_count = 0
         self._cold_exec_phase = "SETUP"
         self._cold_last_action = "SELECT SETUP"
-        self._cold_step_detail = "Choose DAY/NIGHT and LAND/CV. Press START twice to enter checklist."
+        if preserve_progress:
+            self._cold_step_detail = "Choose DAY/NIGHT and LAND/CV. START x2 returns to the same checklist step."
+        else:
+            self._cold_step_detail = "Choose DAY/NIGHT and LAND/CV. Press START twice to enter checklist."
 
     def _cold_enter_checklist(self, reason: str = "ENTRY CONFIRMED") -> None:
-        """Unlock the actual cold-start checklist after two setup confirmations."""
+        """Unlock the actual checklist after two setup confirmations."""
+        preserve_progress = bool(getattr(self, "_cold_setup_preserve_progress", False))
+        if preserve_progress:
+            self._cold_setup_preserve_progress = False
+            self._cold_entry_stage = ENTRY_CHECKLIST
+            self._cold_entry_confirm_count = 0
+            state = getattr(self, "_cold_state", "idle")
+            if state == "paused":
+                self._cold_exec_phase = "PAUSED"
+                self._cold_step_detail = "Setup updated. Press START to resume this step."
+            elif state in ("wait_user", "select_display"):
+                self._cold_exec_phase = "USER"
+                self._cold_step_detail = "Setup updated. Press START to continue this step."
+            elif state == "complete":
+                self._cold_exec_phase = "DONE"
+                self._cold_step_detail = "Setup updated. Checklist was already complete."
+            else:
+                self._cold_exec_phase = "READY"
+                self._cold_step_detail = "Setup updated. Press START to continue."
+            self._cold_last_action = getattr(self, "_cold_last_action", "READY")
+            return
         self._cold_reset_progress(reason)
         self._cold_entry_stage = ENTRY_CHECKLIST
         self._cold_entry_confirm_count = 0
@@ -105,7 +140,7 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         self._cold_right_rpm_fresh = False
         self._cold_hidden_tap_count = 0
         self._cold_hidden_tap_at = 0.0
-        self._cold_enter_setup(reason)
+        self._cold_enter_setup(reason, preserve_progress=False)
         self._cold_exec_phase = "WAIT DCS"
         self._cold_last_action = "WAITING FOR DCS-BIOS"
         self._cold_step_detail = "US NAVY / waiting for DCS-BIOS."
@@ -146,54 +181,57 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         values = [v for v in self._cold_get_fresh_rpms() if v is not None]
         return max(values) if values else None
 
+    def _cold_plain_label(self, key: str, x: int, y: int, w: int, h: int,
+                          font_size: int, bold: bool = False,
+                          align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter) -> QLabel:
+        label = QLabel("", self)
+        label._page = PAGE
+        label.setGeometry(x, y, w, h)
+        label.setAlignment(align)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #d7f3df; background: transparent; border: none;")
+        label_font = QFont("B612", font_size)
+        label_font.setBold(bold)
+        label.setFont(label_font)
+
+        def _rescale_font(new_size, lbl=label, f=label_font):
+            f.setPointSize(new_size)
+            lbl.setFont(f)
+
+        label.rescale_font = _rescale_font
+        self._widget_origins.append((label, x, y, w, h, font_size))
+        self._cold_status_cells[key] = label
+        return label
+
     def _init_cold_start_page(self):
-        """Create a minimal setup/checklist page."""
+        """Create a no-frame text layout plus only the required buttons."""
         self._cold_cells = {}
         self._cold_status_cells = {}
 
-        title = self.place_cell("F/A-18C COLD START", None, 8, 12, 1008, 76,
-                                font_size=30, is_variable=True, register=False,
-                                no_feedback=True, page=PAGE)
-        self._cold_status_cells["title"] = title
+        self._cold_plain_label("title", 8, 22, 1008, 58, 32, True)
+        self._cold_plain_label("rpm", 8, 104, 1008, 72, 30, True)
+        self._cold_plain_label("step", 8, 205, 1008, 94, 30, True)
+        self._cold_plain_label("hint", 70, 318, 884, 96, 22, False)
+        self._cold_plain_label("status", 8, 455, 1008, 44, 15, False)
 
-        rpm = self.place_cell("", None, 8, 106, 1008, 82,
-                              font_size=28, is_variable=True, register=False,
-                              no_feedback=True, page=PAGE,
-                              var_align=Qt.AlignmentFlag.AlignCenter)
-        self._cold_status_cells["rpm"] = rpm
-
-        step = self.place_cell("", None, 8, 212, 1008, 110,
-                               font_size=27, is_variable=True, register=False,
-                               no_feedback=True, page=PAGE,
-                               var_align=Qt.AlignmentFlag.AlignCenter)
-        self._cold_status_cells["step"] = step
-
-        hint = self.place_cell("", None, 8, 342, 1008, 94,
-                               font_size=22, is_variable=True, register=False,
-                               no_feedback=True, page=PAGE,
-                               var_align=Qt.AlignmentFlag.AlignCenter)
-        self._cold_status_cells["hint"] = hint
-
-        status = self.place_cell("", None, 8, 456, 1008, 44,
-                                 font_size=15, is_variable=True, register=False,
-                                 no_feedback=True, page=PAGE,
-                                 var_align=Qt.AlignmentFlag.AlignCenter)
-        self._cold_status_cells["status"] = status
-
-        y, h = 526, 62
-        buttons = [
-            ("START", P_START, 8, 176),
-            ("PAUSE", P_PAUSE, 192, 118),
-            ("SKIP", P_SKIP, 318, 108),
-            ("ABORT", P_ABORT, 434, 128),
-            ("DAY", P_DAY, 570, 96),
-            ("NIGHT", P_NIGHT, 674, 116),
-            ("LAND/CV", P_PROFILE, 798, 218),
+        # Setup-only choices. These are intentionally separate from the checklist page.
+        setup_buttons = [
+            ("DAY", P_DAY, 168, 420, 150, 64),
+            ("NIGHT", P_NIGHT, 330, 420, 170, 64),
+            ("LAND/CV", P_PROFILE, 512, 420, 230, 64),
         ]
-        for text, pos, x, w in buttons:
-            cell = self.place_cell(text, pos, x, y, w, h, font_size=13,
+        for text, pos, x, y, w, h in setup_buttons:
+            cell = self.place_cell(text, pos, x, y, w, h, font_size=16,
                                    register=False, page=PAGE, bold=True)
             self._cold_cells[pos] = cell
+
+        start = self.place_cell("START", P_START, 312, 500, 400, 86,
+                                font_size=26, register=False, page=PAGE, bold=True)
+        self._cold_cells[P_START] = start
+
+        reset = self.place_cell("RESET", P_RESET, 884, 545, 132, 42,
+                                font_size=12, register=False, page=PAGE, bold=True)
+        self._cold_cells[P_RESET] = reset
         self._cold_refresh_ui()
 
     def _update_display(self, field_name, value):
@@ -247,7 +285,7 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
             self._cold_play_startup_animation(return_page="local_icp")
         else:
             left, right = self._cold_get_fresh_rpms()
-            self._cold_enter_setup("AUTO COLD ENTRY")
+            self._cold_enter_setup("AUTO COLD ENTRY", preserve_progress=False)
             self._show_page(PAGE)
             self._cold_refresh_ui()
             self._cold_log(f"FIRST FRESH RPM L={left} R={right}: SETUP PAGE")
@@ -264,12 +302,50 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         if self._cold_hidden_tap_count >= 3:
             self._cold_hidden_tap_count = 0
             self._cold_detected_mode = STARTUP_MODE_COLD
-            self._cold_enter_setup("HIDDEN ENTRY")
+            self._cold_enter_setup("HIDDEN ENTRY", preserve_progress=False)
             self._show_page(PAGE)
             self._cold_refresh_ui()
             self._cold_log("ENTER COLD SETUP BY SETTINGS x3")
             return True
         return False
+
+    def _cold_handle_click(self, pos):
+        if pos in ((0, 0), (1, 0)):
+            max_rpm = self._cold_max_rpm()
+            if self._cold_state in ("complete", "aborted") or (max_rpm is not None and max_rpm >= self._cold_rpm_threshold):
+                self._show_page("local_icp")
+            else:
+                self._cold_last_action = "LOCAL ICP LOCKED"
+                self._cold_step_detail = "Cold-start manager has priority."
+            self._cold_refresh_ui()
+            return
+        if pos == P_START:
+            self._cold_arm_or_continue()
+        elif pos == P_RESET:
+            self._cold_handle_reset_tap()
+        elif pos == P_DAY:
+            self._cold_set_display_mode("day")
+        elif pos == P_NIGHT:
+            self._cold_set_display_mode("night")
+        elif pos == P_PROFILE:
+            self._cold_set_profile("carrier" if self._cold_profile == "land" else "land")
+        self._cold_refresh_ui()
+
+    def _cold_handle_reset_tap(self):
+        now = time.time()
+        if now - getattr(self, "_cold_reset_tap_at", 0.0) > RESET_TAP_WINDOW_SEC:
+            self._cold_reset_tap_count = 0
+        self._cold_reset_tap_count = int(getattr(self, "_cold_reset_tap_count", 0)) + 1
+        self._cold_reset_tap_at = now
+        if self._cold_reset_tap_count < 2:
+            self._cold_last_action = "RESET 1/2"
+            self._cold_step_detail = "Press RESET again to return to setup. Step progress will be kept."
+            self._cold_log("RESET CONFIRM 1/2")
+            return
+        self._cold_reset_tap_count = 0
+        self._cold_enter_setup("RESET TO SETUP", preserve_progress=True)
+        self._cold_last_action = "SELECT SETUP"
+        self._cold_log("RESET CONFIRM 2/2: SETUP PAGE, PROGRESS KEPT")
 
     def _cold_confirm_setup_or_continue(self) -> bool:
         """Handle the mandatory two confirmations before checklist entry."""
@@ -439,25 +515,6 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
             self._cold_step_detail = "Cold start complete."
             self._cold_refresh_ui()
 
-    def _cold_pause(self):
-        if self._cold_state in ("running", "wait_user", "animating"):
-            self._cold_sequence_token += 1
-            self._cold_state = "paused"
-            self._cold_exec_phase = "PAUSE"
-            self._cold_last_action = "PAUSED"
-            self._cold_step_detail = "Press START to resume."
-            self._cold_log("PAUSED")
-            self._cold_refresh_ui()
-
-    def _cold_abort(self):
-        self._cold_enter_setup("ABORT")
-        self._cold_state = "aborted"
-        self._cold_exec_phase = "ABORT"
-        self._cold_last_action = "ABORTED"
-        self._cold_step_detail = "Progress cleared. Re-select setup, then START twice."
-        self._cold_log("ABORTED")
-        self._cold_refresh_ui()
-
     def _cold_enter_hold(self, reason: str):
         self._cold_sequence_token += 1
         self._cold_state = "hold"
@@ -474,7 +531,7 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
             return
         if getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_SETUP:
             self._cold_last_action = "SETUP LOCKED"
-            self._cold_step_detail = "Abort/reset to change DAY/NIGHT."
+            self._cold_step_detail = "Tap RESET twice to change DAY/NIGHT without clearing steps."
             self._cold_refresh_ui()
             return
         self._cold_display_mode = mode
@@ -493,7 +550,7 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
             return
         if getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_SETUP:
             self._cold_last_action = "SETUP LOCKED"
-            self._cold_step_detail = "Abort/reset to change LAND/CV."
+            self._cold_step_detail = "Tap RESET twice to change LAND/CV without clearing steps."
             self._cold_refresh_ui()
             return
         self._cold_profile = profile
@@ -521,12 +578,13 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         display = getattr(self, "_cold_display_mode", "day").upper()
         if getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_CHECKLIST:
             confirm = int(getattr(self, "_cold_entry_confirm_count", 0))
+            progress = "STEP KEPT" if getattr(self, "_cold_setup_preserve_progress", False) else "NEW CHECKLIST"
             return {
                 "title": "COLD START SETUP",
                 "rpm": f"L {l_txt}        R {r_txt}",
                 "step": f"SELECT {display} / {profile_txt}",
                 "hint": f"CONFIRM {confirm}/2: {hint}",
-                "status": "DAY/NIGHT + LAND/CV FIRST    PROGRESS NOT SAVED",
+                "status": f"DAY/NIGHT + LAND/CV FIRST    {progress}",
             }
         if idx < 0:
             step_txt = "STEP --/--"
@@ -540,6 +598,16 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
             "status": f"PROFILE {profile_txt}    DISPLAY {display}    PROGRESS NOT SAVED",
         }
 
+    def _cold_set_cell(self, key: str, text: str):
+        cell = getattr(self, "_cold_status_cells", {}).get(key)
+        if not cell:
+            return
+        if isinstance(cell, QLabel):
+            cell.setText(text)
+            return
+        cell._var_text = text
+        cell.update()
+
     def _cold_refresh_ui(self):
         cells = getattr(self, "_cold_status_cells", {})
         if not cells:
@@ -547,6 +615,19 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         lines = self._cold_status_lines()
         for key, text in lines.items():
             self._cold_set_cell(key, text)
+
+        is_page = getattr(self, "_current_page", None) == PAGE
+        in_setup = getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_CHECKLIST
+        for pos in (P_DAY, P_NIGHT, P_PROFILE):
+            cell = getattr(self, "_cold_cells", {}).get(pos)
+            if cell:
+                cell.setVisible(is_page and in_setup)
+        reset = getattr(self, "_cold_cells", {}).get(P_RESET)
+        if reset:
+            reset.setVisible(is_page and not in_setup)
+        start = getattr(self, "_cold_cells", {}).get(P_START)
+        if start:
+            start.setVisible(is_page)
 
     def _cold_play_startup_animation(self, return_page: Optional[str] = None, after: Optional[Callable[[], None]] = None):
         overlay = install_startup_overlay(self)
@@ -586,20 +667,22 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
     UFCKeypadWindowClass._cold_detect_startup_mode = _cold_detect_startup_mode_fresh
     UFCKeypadWindowClass._cold_all_known_below_threshold = _cold_all_fresh_known_below_threshold
     UFCKeypadWindowClass._cold_max_rpm = _cold_max_fresh_rpm
+    UFCKeypadWindowClass._cold_plain_label = _cold_plain_label
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._update_display = _update_display
     UFCKeypadWindowClass._check_dcs_timeout = _check_dcs_timeout
     UFCKeypadWindowClass._cold_on_dcs_signal = _cold_on_dcs_signal
     UFCKeypadWindowClass._cold_handle_settings_tap = _cold_handle_settings_tap
+    UFCKeypadWindowClass._cold_handle_click = _cold_handle_click
+    UFCKeypadWindowClass._cold_handle_reset_tap = _cold_handle_reset_tap
     UFCKeypadWindowClass._cold_confirm_setup_or_continue = _cold_confirm_setup_or_continue
     UFCKeypadWindowClass._cold_arm_or_continue = _cold_arm_or_continue
     UFCKeypadWindowClass._cold_step_list = _cold_step_list
     UFCKeypadWindowClass._cold_run_next_step = _cold_run_next_step
-    UFCKeypadWindowClass._cold_pause = _cold_pause
-    UFCKeypadWindowClass._cold_abort = _cold_abort
     UFCKeypadWindowClass._cold_enter_hold = _cold_enter_hold
     UFCKeypadWindowClass._cold_set_display_mode = _cold_set_display_mode
     UFCKeypadWindowClass._cold_set_profile = _cold_set_profile
     UFCKeypadWindowClass._cold_status_lines = _cold_status_lines
+    UFCKeypadWindowClass._cold_set_cell = _cold_set_cell
     UFCKeypadWindowClass._cold_refresh_ui = _cold_refresh_ui
     UFCKeypadWindowClass._cold_play_startup_animation = _cold_play_startup_animation
