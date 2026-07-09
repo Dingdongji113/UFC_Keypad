@@ -66,8 +66,10 @@ print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
 rx = DCSBIOSReceiver()
 rx._use_fallback_addresses()
 assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
+assert rx.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_L"][0] == "left_engine_rpm"
-print("[3a] IFEI RPM FALLBACK OK  (IFEI_RPM_L @ 0x749E len=3)")
+assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_R"][0] == "right_engine_rpm"
+print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, len=3)")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
@@ -99,27 +101,38 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 启动管理器基础路径 + 左发 RPM 自动判定 ----
+# ---- 4b. 冷启动入口 + 任意一发 RPM gating ----
+w.dcs_bios.latest.clear()
+w._cold_left_rpm = None
+w._cold_right_rpm = None
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
-w._show_page("select")
-w.on_cell_click((201, 3))
-assert w._current_page == "cold_start"
+w._cold_detect_startup_mode()
+assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN  # 只知道左发低，不足以确认双发都冷
+w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
+w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
-w.on_cell_click((300, 4))  # DAY
-assert w._cold_display_mode == "day"
-w.on_cell_click((300, 5))  # NIGHT
-assert w._cold_display_mode == "night"
+w._show_page("local_icp")
+w.on_cell_click((0, 5))
+w.on_cell_click((0, 5))
+w.on_cell_click((0, 5))
+assert w._current_page == "cold_start"
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
-assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
 w._cold_abort()
-w.dcs_bios.latest["IFEI_RPM_L"] = "  75"
+w._show_page("local_icp")
+w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
+w.dcs_bios.latest["IFEI_RPM_R"] = "  75"
+w._cold_left_rpm = None
+w._cold_right_rpm = None
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
 w.dcs_bios.latest["IFEI_RPM_L"] = "120F"
+w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
+w._cold_left_rpm = None
+w._cold_right_rpm = None
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] STARTUP MANAGER OK  (left RPM <60 cold, >=60 non-cold, suffix-safe parse)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (both <60 cold, either >=60 local ICP)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
@@ -134,8 +147,6 @@ assert cs_cfg.get("cold_start_left_rpm_threshold") == 60
 print("[4c] COLD START CONFIG OK  (supervised controls + bleed-air sequence + RPM threshold present)")
 
 # ---- 5. UFCCell 真实按键路径 ----
-# 模块化拆分后 widgets.py 必须显式导入 UFC_BIOS_MAP / send_dcs_bios 等依赖。
-# 这里模拟正常鼠标 press/release，确保不会再出现 NameError，且 press 命令被正确调用。
 import ufc.widgets as W
 sent = []
 _orig_send = W.send_dcs_bios
@@ -168,7 +179,7 @@ from ufc.morse import text_to_morse
 assert text_to_morse("SOS") == "... --- ...", text_to_morse("SOS")
 assert text_to_morse("A") == ".-", text_to_morse("A")
 assert text_to_morse(" ") == "/", text_to_morse(" ")
-assert " " in text_to_morse("SOS A")  # 字母间有空格分隔
+assert " " in text_to_morse("SOS A")
 print("[6] MORSE OK  (SOS -> '... --- ...', A -> '.-', space -> '/')")
 
 # ---- 7. 亮度同步（单一真值 colors._CURRENT_BRIGHTNESS）----
@@ -194,7 +205,7 @@ cfg = load_config()
 cfg.setdefault("startup_style", STARTUP_STYLE_UFC_BIT)
 cfg.setdefault("cold_start_display_mode", "day")
 cfg.setdefault("cold_start_left_rpm_threshold", 60)
-save_config(cfg)  # round-trip
+save_config(cfg)
 print(f"[10] CONFIG OK  (keys={sorted(cfg.keys())})")
 
 # ---- 11. 入口 main.py 可干净导入且含 main() ----
