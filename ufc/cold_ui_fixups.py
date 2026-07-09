@@ -8,16 +8,20 @@ text requirement while making the cold pages match the main UFC keypad style:
 - returning from RESET setup preserves the current step number and restores the
   actual checklist step title instead of showing CONFIRM SETUP;
 - stale BATTERY_SW=0 configs are corrected to BATTERY_SW=2 for battery ON;
-- stale canopy / ECM configs are corrected to the observed DCS-BIOS state order;
-- DISPLAY BRIGHTNESS is executed immediately after APU OFF.
+- stale canopy configs are corrected;
+- ECM REC is corrected to the DCS-BIOS REC position;
+- DISPLAY BRIGHTNESS is executed immediately after APU OFF and sent as a short
+  sequenced burst instead of one same-frame command batch.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QLabel
 
 import ufc.colors as colors
+import ufc.dcs_bios as dcs_bios
+from ufc.cold_start import DEFAULT_DISPLAY_PRESETS, _merged_config, _pct_to_bios
 from ufc.cold_direct_entry import (
     APU_TO_RIGHT_CRANK_MS,
     ENTRY_CHECKLIST,
@@ -29,6 +33,8 @@ from ufc.cold_direct_entry import (
     P_START,
 )
 from ufc.cold_setup_split import P_CV, P_LAND
+
+BRIGHTNESS_SEND_INTERVAL_MS = 60
 
 
 def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
@@ -132,6 +138,75 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             ("COMPLETE", "complete", "", "Done."),
         ]
 
+    def _cold_display_brightness_entries(self):
+        cfg = _merged_config()
+        mode = str(getattr(self, "_cold_display_mode", "day") or "day").lower()
+        if mode not in ("day", "night"):
+            mode = "day"
+        presets = cfg.get("display_brightness_presets", DEFAULT_DISPLAY_PRESETS)
+        preset = presets.get(mode, DEFAULT_DISPLAY_PRESETS["day"])
+        controls = cfg.get("cold_start_controls", {})
+        labels = {"lddi": "LDDI", "rddi": "RDDI", "ampcd": "AMPCD", "hud": "HUD"}
+        entries = []
+
+        for target in ("lddi", "rddi", "ampcd", "hud"):
+            item = controls.get(f"display_{target}_select", {})
+            ident = str(item.get("id", "") or "").strip() if isinstance(item, dict) else ""
+            if not ident:
+                continue
+            value = item.get(f"{mode}_value", item.get("value", ""))
+            entries.append({"label": f"{labels[target]} SEL", "id": ident, "value": value})
+
+        for target in ("lddi", "rddi", "ampcd", "hud"):
+            percent = int(preset.get(target, 0))
+            item = controls.get(f"display_{target}", {})
+            ident = str(item.get("id", "") or "").strip() if isinstance(item, dict) else ""
+            value_type = item.get("value_type", "analog") if isinstance(item, dict) else "analog"
+            if not ident:
+                continue
+            value = _pct_to_bios(percent) if value_type == "analog" else percent
+            entries.append({"label": f"{labels[target]} {percent}%", "id": ident, "value": value})
+        return entries
+
+    def _cold_apply_display_brightness(self):
+        entries = self._cold_display_brightness_entries()
+        mode = str(getattr(self, "_cold_display_mode", "day") or "day").upper()
+        self._cold_display_brightness_applied = False
+        self._cold_last_action = f"BRIGHTNESS {mode} APPLYING"
+        self._cold_step_detail = "Sending display commands in sequence."
+        self._cold_refresh_ui()
+        if not entries:
+            self._cold_last_action = f"BRIGHTNESS {mode}: NO COMMANDS"
+            self._cold_display_brightness_applied = True
+            self._cold_refresh_ui()
+            return
+
+        results = []
+        token = getattr(self, "_cold_sequence_token", 0)
+
+        def _send_one(index: int):
+            if token != getattr(self, "_cold_sequence_token", 0):
+                return
+            if index >= len(entries):
+                self._cold_display_brightness_applied = True
+                self._cold_last_action = f"BRIGHTNESS {mode}: " + " / ".join(results)
+                self._cold_step_detail = "Display brightness preset applied."
+                self._cold_log(self._cold_last_action)
+                self._cold_refresh_ui()
+                return
+            entry = entries[index]
+            ident = str(entry["id"]).strip()
+            value = entry["value"]
+            ok = dcs_bios.send_dcs_bios(ident, value)
+            result = f"{entry['label']} {'OK' if ok else 'FAIL'}"
+            results.append(result)
+            self._cold_last_action = f"BRIGHTNESS {mode}: {result}"
+            self._cold_log(f"brightness: {ident} {value} {'OK' if ok else 'FAIL'}")
+            self._cold_refresh_ui()
+            QTimer.singleShot(BRIGHTNESS_SEND_INTERVAL_MS, lambda: _send_one(index + 1))
+
+        QTimer.singleShot(0, lambda: _send_one(0))
+
     def _cold_current_step_text(self):
         idx = int(getattr(self, "_cold_step_index", -1))
         steps = self._cold_step_list()
@@ -183,7 +258,7 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
                 {"id": "CANOPY_SW", "value": 1, "delay_ms": 100},
             ]
         elif key == "ecm_receive":
-            return [{"id": "ECM_MODE_SW", "value": 3, "delay_ms": 500}]
+            return [{"id": "ECM_MODE_SW", "value": 1, "delay_ms": 500}]
         return entries
 
     UFCKeypadWindowClass._cold_label_style = _cold_label_style
@@ -191,6 +266,8 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_set_cell = _cold_set_cell
     UFCKeypadWindowClass._cold_step_list = _cold_step_list
+    UFCKeypadWindowClass._cold_display_brightness_entries = _cold_display_brightness_entries
+    UFCKeypadWindowClass._cold_apply_display_brightness = _cold_apply_display_brightness
     UFCKeypadWindowClass._cold_enter_checklist = _cold_enter_checklist
     UFCKeypadWindowClass._cold_current_step_text = _cold_current_step_text
     UFCKeypadWindowClass._cold_entries_from_config = _cold_entries_from_config
