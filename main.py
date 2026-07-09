@@ -78,7 +78,7 @@ def main():
 
         _bootstrap_log("importing startup/ui/windowing/cold_start modules")
         from ufc.ifei_rpm import install_ifei_rpm_fallback
-        from ufc.startup import attach_startup_style_settings, install_startup_overlay
+        from ufc.startup import attach_startup_style_settings
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
         from ufc.cold_start import patch_cold_start
@@ -93,8 +93,7 @@ def main():
 
         _bootstrap_log("creating UFCKeypadWindow")
         key_panel = UFCKeypadWindow()
-        _bootstrap_log("installing startup overlay")
-        install_startup_overlay(key_panel)
+        _bootstrap_log("startup overlay deferred until DCS-BIOS state is known")
         key_panel.hide()
 
         _bootstrap_log("creating SettingsWindow")
