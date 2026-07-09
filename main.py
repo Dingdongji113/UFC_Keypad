@@ -78,12 +78,14 @@ def main():
 
         _bootstrap_log("importing startup/ui/windowing/cold_start modules")
         from ufc.ifei_rpm import install_ifei_rpm_fallback
+        from ufc.realtime_rpm import install_realtime_rpm_callbacks
         from ufc.startup import attach_startup_style_settings
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
         from ufc.cold_start import patch_cold_start
         from ufc.cold_direct_entry import install_cold_direct_entry
         install_ifei_rpm_fallback()
+        install_realtime_rpm_callbacks()
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
