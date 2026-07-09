@@ -39,6 +39,37 @@
       "id": "",
       "value": 0
     },
+    "canopy_close": {
+      "id": "",
+      "value": 1
+    },
+    "bleed_air_cycle": {
+      "sequence": [
+        {
+          "id": "",
+          "value": "PULL",
+          "delay_ms": 150
+        },
+        {
+          "id": "",
+          "value": "INC",
+          "repeat": 4,
+          "delay_ms": 120
+        }
+      ]
+    },
+    "trim_reset": {
+      "id": "",
+      "value": 1
+    },
+    "fcs_reset": {
+      "id": "",
+      "value": 1
+    },
+    "ecm_receive": {
+      "id": "",
+      "value": 1
+    },
     "ins_land": {
       "id": "",
       "value": 2
