@@ -107,10 +107,12 @@ def main():
         from ufc.cold_start import patch_cold_start
         from ufc.cold_direct_entry import install_cold_direct_entry
         from ufc.cold_setup_split import install_split_land_cv_setup
+        from ufc.cold_ui_fixups import install_cold_ui_fixups
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
         install_split_land_cv_setup(UFCKeypadWindow)
+        install_cold_ui_fixups(UFCKeypadWindow)
 
         app = QApplication(sys.argv)
         app.setStyle("Fusion")
