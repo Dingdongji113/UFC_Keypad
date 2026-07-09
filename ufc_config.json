@@ -22,7 +22,7 @@
   "cold_start_controls": {
     "battery_on": {
       "id": "BATTERY_SW",
-      "value": 0
+      "value": 2
     },
     "apu_start": {
       "id": "APU_CONTROL_SW",
