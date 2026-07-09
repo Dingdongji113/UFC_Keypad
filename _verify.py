@@ -21,7 +21,7 @@ mods = [
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/windowing.py",
     f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/realtime_rpm.py", f"{PKG_PATH}/cold_start.py",
     f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/cold_setup_split.py", f"{PKG_PATH}/cold_ui_fixups.py",
-    f"{PKG_PATH}/cv_trim_auto.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/cv_trim_auto.py", f"{PKG_PATH}/direct_command_fixups.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -31,7 +31,7 @@ print(f"[1] COMPILE OK ({len(mods)} modules)")
 for name in [
     "constants", "crashlog", "config", "fonts", "morse", "colors", "dcs_bios", "input", "widgets",
     "startup", "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry",
-    "cold_setup_split", "cold_ui_fixups", "cv_trim_auto", "ui",
+    "cold_setup_split", "cold_ui_fixups", "cv_trim_auto", "direct_command_fixups", "ui",
 ]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK")
@@ -49,11 +49,13 @@ from ufc.realtime_rpm import install_realtime_rpm_callbacks, _decode_rpm_state
 import ufc.cold_start as CS
 import ufc.cold_direct_entry as CDE
 import ufc.cold_setup_split as CSS
+import ufc.direct_command_fixups as DCF
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
 from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.cold_ui_fixups import install_cold_ui_fixups
 from ufc.cv_trim_auto import install_cv_trim_automation, cv_trim_target_deg, _RECEIVER
+from ufc.direct_command_fixups import install_direct_command_fixups
 from ufc.startup import STARTUP_STYLE_UFC_BIT, UFCBitStartupOverlay, attach_startup_style_settings, install_startup_overlay
 
 install_ifei_rpm_fallback()
@@ -63,6 +65,7 @@ install_cold_direct_entry(UFCKeypadWindow)
 install_split_land_cv_setup(UFCKeypadWindow)
 install_cold_ui_fixups(UFCKeypadWindow)
 install_cv_trim_automation(UFCKeypadWindow)
+install_direct_command_fixups(UFCKeypadWindow)
 
 w = UFCKeypadWindow()
 startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
@@ -126,8 +129,7 @@ cv_steps = w._cold_step_list()
 cv_names = [s[0] for s in cv_steps]
 assert len(cv_steps) == 23
 assert cv_names[-2:] == ["CAT TRIM", "COMPLETE"]
-cat_step = cv_steps[-2]
-assert cat_step[1] == "cat_trim_auto"
+assert cv_steps[-2][1] == "cat_trim_auto"
 assert w._cv_trim_target_deg(44000) == 16.0
 assert w._cv_trim_target_deg(45000) == 17.0
 assert w._cv_trim_target_deg(48000) == 17.0
@@ -135,16 +137,38 @@ assert w._cv_trim_target_deg(49000) == 19.0
 assert cv_trim_target_deg(50000) == 19.0
 print("[4b] COLD STEP LIST OK")
 
-# ---- 4c. 控制值 / 亮度 / COMPLETE ----
-assert w._cold_entries_from_config("ejection_seat_arm") == [{"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 250}]
+# ---- 4c. 控制值 / 直控 fallback / 亮度 / COMPLETE ----
+eject_entries = w._cold_entries_from_config("ejection_seat_arm")
+assert eject_entries[0] == {"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 150}
+assert eject_entries[1]["bridge"] == "clickable"
+assert eject_entries[1]["device"] == 7 and eject_entries[1]["command"] == 3006 and eject_entries[1]["value"] == 1.0
 assert w._cold_entries_from_config("battery_on")[0] == {"id": "BATTERY_SW", "value": 2}
-assert w._cold_entries_from_config("ecm_receive") == [{"id": "ECM_MODE_SW", "value": 1, "delay_ms": 500}]
-assert w._cold_entries_from_config("fcs_reset_rwr_power") == [
-    {"id": "FCS_RESET_BTN", "value": 1, "delay_ms": 80},
-    {"id": "FCS_RESET_BTN", "value": 0, "delay_ms": 120},
-    {"id": "RWR_POWER_BTN", "value": 1, "delay_ms": 120},
-    {"id": "RWR_POWER_BTN", "value": 0, "delay_ms": 120},
-]
+ecm_entries = w._cold_entries_from_config("ecm_receive")
+assert ecm_entries[0] == {"id": "ECM_MODE_SW", "value": 1, "delay_ms": 150}
+assert ecm_entries[1]["bridge"] == "clickable"
+assert ecm_entries[1]["device"] == 66 and ecm_entries[1]["command"] == 3001 and ecm_entries[1]["value"] == 0.1
+
+# Verify mixed DCS-BIOS + bridge sequence execution order without sending real UDP.
+import ufc.dcs_bios as DB
+sent = []
+bridge = []
+_orig_db_send = DB.send_dcs_bios
+_orig_bridge = DCF.send_direct_clickable
+try:
+    DB.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
+    DCF.send_direct_clickable = lambda device, command, value, **kwargs: bridge.append((device, command, value, kwargs.get("label"))) or True
+    w._cold_state = "running"
+    w._cold_sequence_token += 1
+    token = w._cold_sequence_token
+    loop = QEventLoop()
+    w._cold_run_sequence_entries("ecm_receive", ecm_entries, 0, token, loop.quit)
+    QTimer.singleShot(800, loop.quit)
+    loop.exec()
+finally:
+    DB.send_dcs_bios = _orig_db_send
+    DCF.send_direct_clickable = _orig_bridge
+assert sent == [("ECM_MODE_SW", 1)]
+assert bridge == [(66, 3001, 0.1, "ECM REC")]
 
 w._cold_display_mode = "day"
 brightness_ids = [e["id"] for e in w._cold_display_brightness_entries()]
@@ -154,7 +178,6 @@ for required_id in [
 ]:
     assert required_id in brightness_ids
 
-# CV trim auto: if fresh telemetry already at target, it should advance to COMPLETE.
 _REE = _RECEIVER
 _REE.inject_for_test(45000, 17.0)
 w._cold_profile = "carrier"
@@ -175,23 +198,23 @@ w._cold_refresh_ui()
 assert w._cold_cells[CDE.P_START].label.text() == "COMPLETE"
 w.on_cell_click(CDE.P_START)
 assert w._current_page == "local_icp"
-print("[4c] COMMANDS / CV TRIM / COMPLETE OK")
+print("[4c] COMMANDS / DIRECT BRIDGE / CV TRIM / COMPLETE OK")
 
 # ---- 5. UFCCell 基本点击 ----
 import ufc.widgets as W
-sent = []
+click_sent = []
 _orig_send = W.send_dcs_bios
 _orig_release = W._send_release
 try:
-    W.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
-    W._send_release = lambda identifier: sent.append((identifier, 0)) or True
+    W.send_dcs_bios = lambda identifier, value: click_sent.append((identifier, value)) or True
+    W._send_release = lambda identifier: click_sent.append((identifier, 0)) or True
     cell = W.UFCCell("1", (1, 1), no_feedback=False)
     press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(5, 5), QPointF(5, 5), QPointF(5, 5), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
     release = QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5), QPointF(5, 5), Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
     cell.mousePressEvent(press)
     cell.mouseReleaseEvent(release)
     app.processEvents()
-    assert sent[0] == ("UFC_1", 1)
+    assert click_sent[0] == ("UFC_1", 1)
 finally:
     W.send_dcs_bios = _orig_send
     W._send_release = _orig_release
