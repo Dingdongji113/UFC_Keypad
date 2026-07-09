@@ -32,6 +32,7 @@ a = Analysis(
         'ufc.cold_direct_entry',
         'ufc.cold_setup_split',
         'ufc.cold_ui_fixups',
+        'ufc.cv_trim_auto',
         'ufc.ui',
     ],
     hookspath=[],
