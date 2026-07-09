@@ -18,7 +18,16 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QLabel
 
 import ufc.colors as colors
-from ufc.cold_direct_entry import ENTRY_CHECKLIST, ENTRY_SETUP, PAGE, P_DAY, P_NIGHT, P_RESET, P_START
+from ufc.cold_direct_entry import (
+    APU_TO_RIGHT_CRANK_MS,
+    ENTRY_CHECKLIST,
+    ENTRY_SETUP,
+    PAGE,
+    P_DAY,
+    P_NIGHT,
+    P_RESET,
+    P_START,
+)
 from ufc.cold_setup_split import P_CV, P_LAND
 
 
@@ -66,7 +75,6 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         self._cold_plain_label("hint", 80, 302, 864, 72, 18, False)
         self._cold_plain_label("status", 8, 378, 1008, 34, 13, False)
 
-        # Centered as one row across the 1024px design width.
         setup_buttons = [
             ("DAY", P_DAY, 216, 430, 138, 58),
             ("NIGHT", P_NIGHT, 368, 430, 158, 58),
@@ -103,7 +111,7 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         return [
             ("BATTERY ON", "send", "battery_on", "Auto command."),
             ("APU START", "send", "apu_start", "Auto command."),
-            ("APU WAIT", "timer", self.APU_TO_RIGHT_CRANK_MS if hasattr(self, "APU_TO_RIGHT_CRANK_MS") else 5000, "Wait 5 seconds before right engine."),
+            ("APU WAIT", "timer", APU_TO_RIGHT_CRANK_MS, "Wait 5 seconds before right engine."),
             ("APU READY?", "user", "", "Confirm APU ready, then START."),
             ("RIGHT CRANK", "send", "right_engine_crank", "Auto command."),
             ("RIGHT IDLE", "user", "", "Set right throttle IDLE, then START."),
@@ -170,14 +178,11 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
                 if str(entry.get("id", "")).strip() == "BATTERY_SW":
                     entry["value"] = 2
         elif key == "canopy_close":
-            # Observed state order is OPEN=2 / HOLD=1 / CLOSE=0.
-            # Old configs used 2 first, which re-opened/held the canopy instead of closing it.
             return [
                 {"id": "CANOPY_SW", "value": 0, "delay_ms": 6500},
                 {"id": "CANOPY_SW", "value": 1, "delay_ms": 100},
             ]
         elif key == "ecm_receive":
-            # Observed state order is OFF/STBY/BIT/REC/XMIT, so REC is 3.
             return [{"id": "ECM_MODE_SW", "value": 3, "delay_ms": 500}]
         return entries
 
