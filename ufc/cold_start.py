@@ -5,15 +5,18 @@ This module intentionally lives outside ``ufc.ui``.  The main window is already
 large and historically fragile, so the sequencer is installed by monkey-patching
 ``UFCKeypadWindow`` before the window instance is created.
 
-First implementation scope:
+Implementation scope:
 - Adds a SYSTEMS option "4  COLD START".
 - Adds a low-brightness cold-start sequencer page.
 - Implements an ASSIST-style sequence:
-  battery/APU/right engine/left engine/APU off/display mode/display brightness/
-  UFC ready/INS mode/complete.
+  battery/APU/right engine/left engine/APU off/supervised system prep/display
+  mode/display brightness/UFC ready/INS mode/complete.
 - Does not run BIT/self-test and does not touch external lights.
 - Requires user confirmation for APU ready and throttle-idle/engine-stable
   points.
+- After both engines are stable and APU is off, the program performs supervised
+  steps for canopy, bleed-air cycle, trim reset, FCS reset, and ECM receive.
+- IFF is deliberately a manual reminder; the program does not auto-operate it.
 - Applies DAY/NIGHT display brightness presets to LDDI/RDDI/AMPCD/HUD through
   config-driven DCS-BIOS controls.
 
@@ -25,7 +28,7 @@ instead of blindly guessing.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from PyQt6.QtCore import Qt, QTimer
 
@@ -64,12 +67,27 @@ DEFAULT_DISPLAY_PRESETS = {
 # Safer default: no real aircraft-changing control IDs are guessed here.  The
 # user can fill these through ufc_config.json after confirming identifiers from
 # their DCS-BIOS FA-18C_hornet.json.
+#
+# A control may be either:
+#   {"id": "CONTROL", "value": 1}
+# or a supervised sequence:
+#   {"sequence": [{"id": "CONTROL", "value": "INC", "repeat": 3, "delay_ms": 80}]}
 DEFAULT_CONTROLS = {
     "battery_on": {"id": "", "value": 1},
     "apu_start": {"id": "", "value": 1},
     "right_engine_crank": {"id": "", "value": 1},
     "left_engine_crank": {"id": "", "value": 1},
     "apu_off": {"id": "", "value": 0},
+    "canopy_close": {"id": "", "value": 1},
+    "bleed_air_cycle": {
+        "sequence": [
+            {"id": "", "value": "PULL", "delay_ms": 150},
+            {"id": "", "value": "INC", "repeat": 4, "delay_ms": 120},
+        ]
+    },
+    "trim_reset": {"id": "", "value": 1},
+    "fcs_reset": {"id": "", "value": 1},
+    "ecm_receive": {"id": "", "value": 1},
     "ins_land": {"id": "", "value": 2},
     "ins_carrier": {"id": "", "value": 1},
     "display_lddi": {"id": "", "value_type": "analog"},
@@ -145,8 +163,8 @@ def patch_cold_start(UFCKeypadWindowClass):
     UFCKeypadWindowClass.init_ui = init_ui
     UFCKeypadWindowClass.on_cell_click = on_cell_click
 
-    # Attach methods.  We keep them as standalone nested functions to avoid
-    # touching ufc.ui directly.
+    # Attach methods.  We keep them as standalone functions to avoid touching
+    # ufc.ui directly.
     UFCKeypadWindowClass._cold_start_setup_state = _cold_start_setup_state
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_handle_click = _cold_handle_click
@@ -186,6 +204,7 @@ def _cold_start_setup_state(self):
     self._cold_cells = {}
     self._cold_status_cells = {}
     self._cold_last_action = "READY"
+    self._cold_total_steps = 20
 
 
 def _init_cold_start_page(self):
@@ -315,12 +334,19 @@ def _cold_run_next_step(self):
         ("SET LEFT THROTTLE IDLE", "user", "SET L THROTTLE IDLE, THEN START"),
         ("CONFIRM LEFT ENGINE STABLE", "flag_left", "L ENGINE STABLE CONFIRMED"),
         ("APU OFF", "apu_off", "apu_off"),
+        ("CLOSE CANOPY", "supervised", "canopy_close"),
+        ("BLEED AIR PULL ROTATE 360", "supervised", "bleed_air_cycle"),
+        ("TRIM RESET", "supervised", "trim_reset"),
+        ("FCS RESET", "supervised", "fcs_reset"),
+        ("ECM RECEIVE", "supervised", "ecm_receive"),
+        ("MANUAL IFF ON", "user", "OPEN IFF MANUALLY, THEN START"),
         ("SELECT DISPLAY MODE", "select_display", "SELECT DAY OR NIGHT"),
         ("APPLY DISPLAY BRIGHTNESS", "display_brightness", ""),
         ("LOCAL ICP READY", "unlock", ""),
         ("INS MODE", "ins", ""),
         ("COMPLETE", "complete", ""),
     ]
+    self._cold_total_steps = len(steps) - 1
 
     if self._cold_step_index >= len(steps):
         self._cold_state = "complete"
@@ -335,6 +361,10 @@ def _cold_run_next_step(self):
     if kind == "send":
         self._cold_send_configured(payload)
         QTimer.singleShot(500, lambda: _cold_advance_if_running(self))
+    elif kind == "supervised":
+        self._cold_send_configured(payload)
+        self._cold_last_action = f"SUPERVISE {title}"
+        QTimer.singleShot(900, lambda: _cold_advance_if_running(self))
     elif kind == "user":
         self._cold_state = "wait_user"
         self._cold_last_action = str(payload)
@@ -431,6 +461,37 @@ def _cold_set_profile(self, profile: str):
 def _cold_send_configured(self, key: str) -> bool:
     cfg = _merged_config()
     item = cfg.get("cold_start_controls", {}).get(key, {})
+    if not isinstance(item, dict):
+        self._cold_log(f"{key}: INVALID CONFIG")
+        self._cold_last_action = f"{self._cold_last_action} / BAD CFG"
+        return False
+
+    sequence = item.get("sequence")
+    if isinstance(sequence, list):
+        any_sent = False
+        any_missing = False
+        for entry in sequence:
+            if not isinstance(entry, dict):
+                continue
+            ident = str(entry.get("id", "") or "").strip()
+            value = entry.get("value", entry.get("command", ""))
+            repeat = max(1, int(entry.get("repeat", 1) or 1))
+            delay_ms = max(0, int(entry.get("delay_ms", 0) or 0))
+            if not ident:
+                any_missing = True
+                continue
+            for _ in range(repeat):
+                ok = send_dcs_bios(ident, value)
+                any_sent = any_sent or ok
+                if delay_ms:
+                    time.sleep(delay_ms / 1000.0)
+        if any_missing:
+            self._cold_log(f"{key}: SEQ NO ID")
+            self._cold_last_action = f"{self._cold_last_action} / NO ID"
+        elif any_sent:
+            self._cold_log(f"{key}: SEQ OK")
+        return any_sent
+
     ident = str(item.get("id", "") or "").strip()
     value = item.get("value", item.get("command", ""))
     if not ident:
@@ -488,7 +549,8 @@ def _cold_unlock_local_icp(self):
 def _cold_status_lines(self):
     state = getattr(self, "_cold_state", "idle").upper()
     idx = getattr(self, "_cold_step_index", -1)
-    step_txt = "--" if idx < 0 else f"{idx:02d}/14"
+    total = getattr(self, "_cold_total_steps", 20)
+    step_txt = "--" if idx < 0 else f"{idx:02d}/{total:02d}"
     profile = getattr(self, "_cold_profile", "land").upper()
     mode = getattr(self, "_cold_display_mode", "day").upper()
     r_eng = "STABLE" if getattr(self, "_cold_right_engine_online", False) else "OFF/START"
@@ -501,7 +563,7 @@ def _cold_status_lines(self):
         "state": f"STATE {state:<12} STEP {step_txt:<6} PROFILE {profile}",
         "engines": f"R ENG {r_eng:<10} L ENG {l_eng:<10} APU {apu:<8} UFC {ufc}",
         "action": f"ACTION {getattr(self, '_cold_last_action', 'READY')}",
-        "mode": f"DISPLAY {mode:<5}  START=ARM/RUN/CONFIRM  DAY/NIGHT AFTER ENGINES",
+        "mode": f"DISPLAY {mode:<5}  SUPERVISE ACTIONS / MANUAL IFF REQUIRED",
     }
 
 
