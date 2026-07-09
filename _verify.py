@@ -157,11 +157,22 @@ assert abs((row_left + row_right) / 2 - 512) <= 4, (row_left, row_right)
 
 steps = w._cold_step_list()
 step_names = [step[0] for step in steps]
-assert len(steps) == 21
-assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
-assert step_names[10:13] == ["APU OFF", "BRIGHTNESS", "CANOPY CLOSE"], step_names
-assert step_names[16] == "ECM REC", step_names
-assert step_names.index("BRIGHTNESS") == step_names.index("APU OFF") + 1
+assert len(steps) == 22
+assert step_names[0] == "EJECT SAFE OFF"
+assert steps[3][1] == "timer" and steps[3][2] == CDE.APU_TO_RIGHT_CRANK_MS
+assert step_names[11:14] == ["APU OFF", "BRIGHTNESS", "CANOPY CLOSE"], step_names
+assert step_names[16] == "FCS / RWR", step_names
+assert step_names[17] == "ECM REC", step_names
+assert step_names[18] == "MANUAL SETUP", step_names
+assert "IFF MANUAL" not in step_names
+assert "CAT TRIM" not in step_names
+assert step_names[-1] == "COMPLETE"
+w._cold_profile = "carrier"
+cv_step_names = [step[0] for step in w._cold_step_list()]
+assert len(cv_step_names) == 23
+assert cv_step_names[-2:] == ["CAT TRIM", "COMPLETE"]
+assert "<=44000lb 16 deg" in w._cold_step_list()[-2][3]
+w._cold_profile = "land"
 assert not any(step[0] == "DISPLAY MODE" for step in steps)
 assert not any(label in step_names for label in ["PAUSE", "SKIP", "ABORT"])
 w._cold_refresh_ui()
@@ -196,7 +207,7 @@ w.on_cell_click(CDE.P_START)
 assert w._cold_state == "armed"
 w.on_cell_click(CDE.P_START)
 assert w._cold_state in ("running", "wait_user")
-w._cold_step_index = 3
+w._cold_step_index = 4
 w._cold_state = "wait_user"
 saved_step = w._cold_step_index
 w.on_cell_click(CDE.P_RESET)
@@ -214,7 +225,7 @@ assert w._cold_entry_stage == CDE.ENTRY_CHECKLIST
 assert w._cold_step_index == saved_step
 assert w._cold_last_action == "APU READY?"
 assert "CONFIRM SETUP" not in w._cold_status_lines()["step"]
-print("[4b] COLD UI OK  (green labels, centered setup buttons, reset keeps real step)")
+print("[4b] COLD UI OK  (green labels, centered setup buttons, extended steps)")
 
 # ---- 4c. 冷启动配置键 + command fixups + sequenced brightness ----
 cs_cfg = CS._merged_config()
@@ -226,6 +237,7 @@ required_controls = {
 assert required_controls.issubset(set(cs_cfg["cold_start_controls"].keys()))
 assert "sequence" in cs_cfg["cold_start_controls"]["bleed_air_cycle"]
 assert cs_cfg.get("cold_start_left_rpm_threshold") == 60
+assert w._cold_entries_from_config("ejection_seat_arm") == [{"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 250}]
 battery_entries = w._cold_entries_from_config("battery_on")
 assert battery_entries and battery_entries[0]["id"] == "BATTERY_SW" and battery_entries[0]["value"] == 2
 canopy_entries = w._cold_entries_from_config("canopy_close")
@@ -235,6 +247,13 @@ assert canopy_entries == [
 ]
 ecm_entries = w._cold_entries_from_config("ecm_receive")
 assert ecm_entries == [{"id": "ECM_MODE_SW", "value": 1, "delay_ms": 500}]
+fcs_rwr_entries = w._cold_entries_from_config("fcs_reset_rwr_power")
+assert fcs_rwr_entries == [
+    {"id": "FCS_RESET_BTN", "value": 1, "delay_ms": 80},
+    {"id": "FCS_RESET_BTN", "value": 0, "delay_ms": 120},
+    {"id": "RWR_POWER_BTN", "value": 1, "delay_ms": 120},
+    {"id": "RWR_POWER_BTN", "value": 0, "delay_ms": 120},
+]
 
 w._cold_display_mode = "day"
 brightness_entries = w._cold_display_brightness_entries()
@@ -262,7 +281,15 @@ finally:
     DB.send_dcs_bios = _orig_db_send
 assert [item[0] for item in sent_brightness] == brightness_ids, sent_brightness
 assert w._cold_display_brightness_applied is True
-print("[4c] COLD START CONFIG OK  (battery/canopy/ECM + sequenced brightness commands fixed)")
+
+w._cold_state = "complete"
+w._cold_entry_stage = CDE.ENTRY_CHECKLIST
+w._current_page = "cold_start"
+w._cold_refresh_ui()
+assert w._cold_cells[CDE.P_START].label.text() == "COMPLETE"
+w.on_cell_click(CDE.P_START)
+assert w._current_page == "local_icp"
+print("[4c] COLD START CONFIG OK  (commands + brightness + COMPLETE button fixed)")
 
 # ---- 5. UFCCell 真实按键路径 ----
 import ufc.widgets as W
