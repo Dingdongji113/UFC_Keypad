@@ -11,7 +11,11 @@ text requirement while making the cold pages match the main UFC keypad style:
 - stale canopy configs are corrected;
 - ECM REC is corrected to the DCS-BIOS REC position;
 - DISPLAY BRIGHTNESS is executed immediately after APU OFF and sent as a short
-  sequenced burst instead of one same-frame command batch.
+  sequenced burst instead of one same-frame command batch;
+- the checklist includes ejection-seat safety off/armed first, ALR-67 power with
+  FCS reset, manual standby attitude/radar altitude/bingo setup, and a CV-only
+  catapult trim confirmation step;
+- after COMPLETE, the large START button becomes COMPLETE and jumps to LOCAL ICP.
 """
 from __future__ import annotations
 
@@ -113,8 +117,9 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         cell.update()
 
     def _cold_step_list(self):
-        """Authoritative 21-step checklist with brightness after APU OFF."""
-        return [
+        """Authoritative checklist. CV adds one carrier trim step near the end."""
+        steps = [
+            ("EJECT SAFE OFF", "send", "ejection_seat_arm", "Set ejection-seat safety OFF / ARMED."),
             ("BATTERY ON", "send", "battery_on", "Auto command."),
             ("APU START", "send", "apu_start", "Auto command."),
             ("APU WAIT", "timer", APU_TO_RIGHT_CRANK_MS, "Wait 5 seconds before right engine."),
@@ -130,13 +135,21 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             ("CANOPY CLOSE", "supervised", "canopy_close", "Program executes; monitor cockpit."),
             ("BLEED AIR", "supervised", "bleed_air_cycle", "Program executes; monitor cockpit."),
             ("TRIM RESET", "supervised", "trim_reset", "Program executes; monitor cockpit."),
-            ("FCS RESET", "supervised", "fcs_reset", "Program executes; monitor cockpit."),
+            ("FCS / RWR", "supervised", "fcs_reset_rwr_power", "Reset FCS and press ALR-67 POWER."),
             ("ECM REC", "supervised", "ecm_receive", "Program executes; monitor cockpit."),
-            ("IFF MANUAL", "user", "", "Open IFF manually, then START."),
+            ("MANUAL SETUP", "user", "", "Set standby attitude, radar altitude minimum, and bingo fuel; then START."),
             ("LOCAL ICP", "unlock", "", "Verify LOCAL ICP ready."),
             ("INS", "ins", "", "Set selected LAND/CV profile."),
-            ("COMPLETE", "complete", "", "Done."),
         ]
+        if str(getattr(self, "_cold_profile", "land") or "land").lower() == "carrier":
+            steps.append((
+                "CAT TRIM",
+                "user",
+                "",
+                "Set nose-up trim by weight: <=44000lb 16 deg; 45000-48000lb 17 deg; >=49000lb 19 deg. Then START.",
+            ))
+        steps.append(("COMPLETE", "complete", "", "Done. Press COMPLETE to enter LOCAL ICP."))
+        return steps
 
     def _cold_display_brightness_entries(self):
         cfg = _merged_config()
@@ -246,12 +259,81 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         self._cold_last_action = "COLD START READY"
         self._cold_step_detail = "Press START twice to arm and run."
 
+    def _cold_arm_or_continue(self):
+        if self._cold_confirm_setup_or_continue():
+            return
+        if self._cold_state == "complete":
+            self._cold_log("COMPLETE -> LOCAL ICP")
+            self._show_page("local_icp")
+            return
+        if self._cold_state in ("idle", "aborted"):
+            if not self._cold_all_known_below_threshold():
+                self._cold_enter_hold("ENGINE RPM NOT COLD")
+                return
+            self._cold_reset_progress("ARM")
+            self._cold_entry_stage = ENTRY_CHECKLIST
+            self._cold_state = "armed"
+            self._cold_exec_phase = "ARMED"
+            self._cold_last_action = "ARMED"
+            self._cold_step_detail = "Press START again."
+            self._cold_log(f"ARMED COLD L={self._cold_left_rpm} R={self._cold_right_rpm}")
+            self._cold_refresh_ui()
+            return
+        if self._cold_state == "armed":
+            self._cold_state = "running"
+            self._cold_step_index = 0
+            self._cold_exec_phase = "EXEC"
+            self._cold_log("RUN COLD START")
+            self._cold_run_next_step()
+            return
+        if self._cold_state in ("paused", "hold"):
+            was_hold = self._cold_state == "hold"
+            self._cold_state = "running"
+            self._cold_exec_phase = "EXEC"
+            if was_hold:
+                self._cold_step_index += 1
+            self._cold_log("CONTINUE")
+            self._cold_run_next_step()
+            return
+        if self._cold_state in ("wait_user", "select_display"):
+            self._cold_state = "running"
+            self._cold_exec_phase = "EXEC"
+            self._cold_log("USER CONFIRM")
+            self._cold_step_index += 1
+            self._cold_run_next_step()
+            return
+
+    def _cold_refresh_ui(self):
+        cells = getattr(self, "_cold_status_cells", {})
+        if not cells:
+            return
+        lines = self._cold_status_lines()
+        for key, text in lines.items():
+            self._cold_set_cell(key, text)
+
+        is_page = getattr(self, "_current_page", None) == PAGE
+        in_setup = getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_CHECKLIST
+        waiting_for_rpm = self._cold_detected_mode == "unknown" and not getattr(self, "_cold_first_mode_decided", False)
+        for pos in (P_DAY, P_NIGHT, P_LAND, P_CV):
+            cell = getattr(self, "_cold_cells", {}).get(pos)
+            if cell:
+                cell.setVisible(is_page and in_setup and not waiting_for_rpm)
+        reset = getattr(self, "_cold_cells", {}).get(P_RESET)
+        if reset:
+            reset.setVisible(is_page and not in_setup and not waiting_for_rpm)
+        start = getattr(self, "_cold_cells", {}).get(P_START)
+        if start:
+            start.setVisible(is_page and not waiting_for_rpm)
+            start.setText("COMPLETE" if getattr(self, "_cold_state", None) == "complete" else "START")
+
     def _cold_entries_from_config(self, key: str):
         entries = previous_entries_from_config(self, key)
         if key == "battery_on":
             for entry in entries:
                 if str(entry.get("id", "")).strip() == "BATTERY_SW":
                     entry["value"] = 2
+        elif key == "ejection_seat_arm":
+            return [{"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 250}]
         elif key == "canopy_close":
             return [
                 {"id": "CANOPY_SW", "value": 0, "delay_ms": 6500},
@@ -259,6 +341,18 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             ]
         elif key == "ecm_receive":
             return [{"id": "ECM_MODE_SW", "value": 1, "delay_ms": 500}]
+        elif key == "rwr_power_on":
+            return [
+                {"id": "RWR_POWER_BTN", "value": 1, "delay_ms": 120},
+                {"id": "RWR_POWER_BTN", "value": 0, "delay_ms": 120},
+            ]
+        elif key == "fcs_reset_rwr_power":
+            return [
+                {"id": "FCS_RESET_BTN", "value": 1, "delay_ms": 80},
+                {"id": "FCS_RESET_BTN", "value": 0, "delay_ms": 120},
+                {"id": "RWR_POWER_BTN", "value": 1, "delay_ms": 120},
+                {"id": "RWR_POWER_BTN", "value": 0, "delay_ms": 120},
+            ]
         return entries
 
     UFCKeypadWindowClass._cold_label_style = _cold_label_style
@@ -270,4 +364,6 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
     UFCKeypadWindowClass._cold_apply_display_brightness = _cold_apply_display_brightness
     UFCKeypadWindowClass._cold_enter_checklist = _cold_enter_checklist
     UFCKeypadWindowClass._cold_current_step_text = _cold_current_step_text
+    UFCKeypadWindowClass._cold_arm_or_continue = _cold_arm_or_continue
+    UFCKeypadWindowClass._cold_refresh_ui = _cold_refresh_ui
     UFCKeypadWindowClass._cold_entries_from_config = _cold_entries_from_config
