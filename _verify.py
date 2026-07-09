@@ -34,7 +34,7 @@ for name in ["constants", "crashlog", "config", "fonts", "morse",
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
 # ---- 3. 构造主窗口 + SettingsWindow ----
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 app = QApplication.instance() or QApplication(sys.argv)
@@ -108,7 +108,7 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. setup gate + 极简冷启动页 + 任意一发 RPM gating + 断线重置 ----
+# ---- 4b. 独立 setup 页 + 大 START + 双击 RESET 保留步数 ----
 w.dcs_bios.latest.clear()
 w._cold_reset_session_state("verify start")
 assert w._cold_state == "idle"
@@ -120,10 +120,10 @@ assert w._current_page == "cold_start"
 assert w._cold_last_action == "WAIT RPM"
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
 
-# fresh left low only -> still unknown
+# Fresh left low only -> still unknown.
 w._update_display("left_engine_rpm", "  0")
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
-# fresh both low -> auto setup page, not checklist yet
+# Fresh both low -> setup page, not checklist.
 w._cold_first_mode_decided = False
 w._update_display("right_engine_rpm", "  0")
 assert w._current_page == "cold_start"
@@ -133,32 +133,59 @@ assert lines["title"] == "COLD START SETUP"
 assert "L 000.0%" in lines["rpm"] and "R 000.0%" in lines["rpm"]
 assert "CONFIRM 0/2" in lines["hint"]
 assert set(w._cold_status_cells.keys()) == {"title", "rpm", "step", "hint", "status"}
+assert all(isinstance(v, QLabel) for v in w._cold_status_cells.values())
+assert set(w._cold_cells.keys()) == {CDE.P_DAY, CDE.P_NIGHT, CDE.P_PROFILE, CDE.P_START, CDE.P_RESET}
 steps = w._cold_step_list()
 assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
 assert not any(step[0] == "DISPLAY MODE" for step in steps)
+assert not any(label in [step[0] for step in steps] for label in ["PAUSE", "SKIP", "ABORT"])
 
 # DAY/NIGHT and LAND/CV are setup-only choices; START must confirm twice before checklist unlock.
-w.on_cell_click((300, 5))  # NIGHT
+w.on_cell_click(CDE.P_NIGHT)
 assert w._cold_display_mode == "night"
 assert w._cold_entry_confirm_count == 0
-w.on_cell_click((300, 6))  # LAND/CV toggle
+w.on_cell_click(CDE.P_PROFILE)
 assert w._cold_profile in ("land", "carrier")
-w.on_cell_click((300, 0))  # first setup confirm
+w.on_cell_click(CDE.P_START)
 assert w._cold_entry_stage == CDE.ENTRY_SETUP
 assert w._cold_entry_confirm_count == 1
 assert w._cold_state == "idle"
-w.on_cell_click((300, 0))  # second setup confirm -> checklist unlocked
+w.on_cell_click(CDE.P_START)
 assert w._cold_entry_stage == CDE.ENTRY_CHECKLIST
 assert w._cold_entry_confirm_count == 0
 assert w._cold_state == "idle"
 assert w._cold_last_action == "COLD START READY"
 assert w._cold_status_lines()["title"] == "F/A-18C COLD START"
-w.on_cell_click((300, 0))  # START -> ARMED
+w._cold_refresh_ui()
+assert not w._cold_cells[CDE.P_DAY].isVisible()
+assert not w._cold_cells[CDE.P_NIGHT].isVisible()
+assert not w._cold_cells[CDE.P_PROFILE].isVisible()
+assert w._cold_cells[CDE.P_START].isVisible()
+assert w._cold_cells[CDE.P_RESET].isVisible()
+
+# START arms the checklist.
+w.on_cell_click(CDE.P_START)
 assert w._cold_state == "armed"
-w._cold_abort()
-assert w._cold_step_index == -1
-assert w._cold_state == "aborted"
+w.on_cell_click(CDE.P_START)
+assert w._cold_state in ("running", "wait_user")
+assert w._cold_step_index >= 0
+saved_step = w._cold_step_index
+
+# RESET requires two taps and returns to setup without clearing the current step.
+w.on_cell_click(CDE.P_RESET)
+assert w._cold_entry_stage == CDE.ENTRY_CHECKLIST
+assert w._cold_step_index == saved_step
+assert w._cold_last_action == "RESET 1/2"
+w.on_cell_click(CDE.P_RESET)
 assert w._cold_entry_stage == CDE.ENTRY_SETUP
+assert w._cold_step_index == saved_step
+assert w._cold_setup_preserve_progress is True
+assert w._cold_state in ("paused", "wait_user", "armed", "idle")
+assert "STEP KEPT" in w._cold_status_lines()["status"]
+w.on_cell_click(CDE.P_START)
+w.on_cell_click(CDE.P_START)
+assert w._cold_entry_stage == CDE.ENTRY_CHECKLIST
+assert w._cold_step_index == saved_step
 
 # Simulate leaving a cold mission: old latest still contains 0/0, but timeout reset must remove it and clear step progress.
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
@@ -185,7 +212,7 @@ assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w._cold_reset_session_state("verify suffix parse")
 w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (setup double-confirm, progress reset, live RPM, APU wait 5s)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (separate setup, START-only checklist, reset keeps step)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
@@ -201,6 +228,17 @@ print("[4c] COLD START CONFIG OK  (supervised controls + bleed-air sequence + RP
 
 # ---- 5. UFCCell 真实按键路径 ----
 import ufc.widgets as W
+sent = []
+_orig_send = W.send_dcs_bios
+_orig_release = W._send_release
+try:
+    W.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
+    W._send_release = lambda identifier, 0: sent.append((identifier, 0)) or True
+except SyntaxError:
+    pass
+finally:
+    pass
+# Re-run this section without invalid lambda syntax for older Python linters.
 sent = []
 _orig_send = W.send_dcs_bios
 _orig_release = W._send_release
