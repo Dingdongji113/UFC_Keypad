@@ -25,7 +25,7 @@ instead of blindly guessing.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from PyQt6.QtCore import Qt, QTimer
 
@@ -86,8 +86,14 @@ def _pct_to_bios(percent: int) -> int:
 
 def _merged_config() -> Dict[str, Any]:
     cfg = load_config()
-    controls = DEFAULT_CONTROLS.copy()
-    controls.update(cfg.get("cold_start_controls", {}) or {})
+    controls = {key: value.copy() for key, value in DEFAULT_CONTROLS.items()}
+    for key, value in (cfg.get("cold_start_controls", {}) or {}).items():
+        if isinstance(value, dict):
+            merged = controls.get(key, {}).copy()
+            merged.update(value)
+            controls[key] = merged
+        else:
+            controls[key] = value
 
     presets = {
         "day": DEFAULT_DISPLAY_PRESETS["day"].copy(),
@@ -139,8 +145,8 @@ def patch_cold_start(UFCKeypadWindowClass):
     UFCKeypadWindowClass.init_ui = init_ui
     UFCKeypadWindowClass.on_cell_click = on_cell_click
 
-    # Attach methods.  We keep them as standalone functions to avoid touching
-    # ufc.ui directly.
+    # Attach methods.  We keep them as standalone nested functions to avoid
+    # touching ufc.ui directly.
     UFCKeypadWindowClass._cold_start_setup_state = _cold_start_setup_state
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_handle_click = _cold_handle_click
@@ -185,9 +191,9 @@ def _cold_start_setup_state(self):
 def _init_cold_start_page(self):
     # Top row
     self.place_cell("I/P", (0, 0), 8, 7, 140, 90, font_size=20,
-                    register=False, page=PAGE)
+                    register=False, no_feedback=True, page=PAGE)
     self.place_cell("SYSTEMS", (1, 0), 164, 7, 140, 90, font_size=20,
-                    register=False, page=PAGE)
+                    register=False, no_feedback=True, page=PAGE)
     title = self.place_cell("COLD START\nSEQUENCER", None, 316, 7, 700, 90,
                             font_size=26, is_variable=True, register=False,
                             no_feedback=True, page=PAGE)
