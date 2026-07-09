@@ -4,6 +4,7 @@
   "cold_start_mode": "assist",
   "cold_start_profile": "land",
   "cold_start_display_mode": "day",
+  "cold_start_left_rpm_threshold": 60,
   "display_brightness_presets": {
     "day": {
       "lddi": 80,
