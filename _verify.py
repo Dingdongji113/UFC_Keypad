@@ -43,6 +43,7 @@ from ufc.ui import UFCKeypadWindow, SettingsWindow
 from ufc.dcs_bios import DCSBIOSReceiver
 from ufc.ifei_rpm import install_ifei_rpm_fallback
 import ufc.cold_start as CS
+import ufc.cold_direct_entry as CDE
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
 from ufc.startup import (
@@ -108,15 +109,20 @@ print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / c
 w.dcs_bios.latest.clear()
 w._cold_left_rpm = None
 w._cold_right_rpm = None
+w._cold_first_mode_decided = False
+w._cold_dcs_seen = False
+w._show_page("local_icp")
+w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
+assert w._current_page == "cold_start"
+assert w._cold_last_action == "WAIT ENGINE RPM DATA"
+
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
 w._cold_detect_startup_mode()
-assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN  # 只知道左发低，不足以确认双发都冷
+assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
 w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_COLD
-w._show_page("local_icp")
 w._cold_first_mode_decided = False
-w._cold_dcs_seen = False
 w._cold_on_dcs_signal("IFEI_RPM_R", "  0")
 assert w._current_page == "cold_start"
 assert w._cold_last_action == "AUTO COLD START ENTRY"
@@ -130,13 +136,14 @@ w._cold_left_rpm = None
 w._cold_right_rpm = None
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
+assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w.dcs_bios.latest["IFEI_RPM_L"] = "120F"
 w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
 w._cold_left_rpm = None
 w._cold_right_rpm = None
 w._cold_detect_startup_mode()
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (auto cold page when both <60, either >=60 local ICP)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (wait RPM, auto cold page, either >=60 local ICP, min anim 5s)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
