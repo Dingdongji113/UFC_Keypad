@@ -82,9 +82,11 @@ def main():
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
         from ufc.cold_start import patch_cold_start
+        from ufc.cold_direct_entry import install_cold_direct_entry
         install_ifei_rpm_fallback()
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
+        install_cold_direct_entry(UFCKeypadWindow)
         _bootstrap_log("startup/ui/windowing/cold_start modules imported")
 
         _bootstrap_log("creating QApplication")
