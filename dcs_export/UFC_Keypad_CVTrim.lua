@@ -1,4 +1,4 @@
--- UFC_Keypad CV catapult trim bridge for DCS Export.lua
+-- UFC_Keypad CV trim and direct cockpit command bridge for DCS Export.lua
 --
 -- Installation:
 --   1. Copy this file to Saved Games\DCS[.openbeta]\Scripts\UFC_Keypad_CVTrim.lua
@@ -7,12 +7,7 @@
 --
 -- Ports:
 --   5518: DCS -> UFC_Keypad telemetry JSON
---   5519: UFC_Keypad -> DCS trim pulse JSON
---
--- Notes:
---   DCS export data availability can vary by build/module.  The script sends
---   every field it can read and keeps unknown fields as nil.  UFC_Keypad only
---   auto-trims when both weight and stabilator/elevator trim angle are fresh.
+--   5519: UFC_Keypad -> DCS command JSON
 
 local socket = require('socket')
 
@@ -23,6 +18,30 @@ UFC_CVTRIM.command_port = 5519
 UFC_CVTRIM.last_send = 0
 UFC_CVTRIM.send_interval = 0.25
 UFC_CVTRIM.pending_release = nil
+UFC_CVTRIM.log_path = nil
+
+local function now_time()
+    return LoGetModelTime and LoGetModelTime() or socket.gettime()
+end
+
+local function init_log_path()
+    if UFC_CVTRIM.log_path then return UFC_CVTRIM.log_path end
+    if lfs and lfs.writedir then
+        UFC_CVTRIM.log_path = lfs.writedir() .. [[Logs\UFC_Keypad_CVTrim.log]]
+    else
+        UFC_CVTRIM.log_path = [[UFC_Keypad_CVTrim.log]]
+    end
+    return UFC_CVTRIM.log_path
+end
+
+local function log(msg)
+    local path = init_log_path()
+    local f = io.open(path, 'a')
+    if f then
+        f:write(string.format('[%.3f] %s\n', now_time(), tostring(msg)))
+        f:close()
+    end
+end
 
 local tx = socket.udp()
 tx:setpeername(UFC_CVTRIM.host, UFC_CVTRIM.telemetry_port)
@@ -30,6 +49,8 @@ tx:setpeername(UFC_CVTRIM.host, UFC_CVTRIM.telemetry_port)
 local rx = socket.udp()
 rx:setsockname(UFC_CVTRIM.host, UFC_CVTRIM.command_port)
 rx:settimeout(0)
+
+log('UFC_Keypad_CVTrim bridge loaded')
 
 local function json_number(name, value)
     if type(value) == 'number' then
@@ -48,20 +69,11 @@ end
 
 local function get_weight_lbs()
     local self_data = LoGetSelfData and LoGetSelfData() or nil
-    local w = pick_number(self_data, {'Weight', 'weight', 'GrossWeight', 'gross_weight'})
+    local w = pick_number(self_data, {'Weight', 'weight', 'GrossWeight', 'gross_weight', 'Mass', 'mass'})
     if w then
-        -- Some export builds return kg, some community exports return lbs.
-        -- Hornet launch weights in kg are much smaller than 44000, so convert.
         if w < 25000 then return w * 2.20462262 end
         return w
     end
-
-    -- Fallback: if no gross weight exists, try fuel only.  This is not enough
-    -- for automatic trimming, so UFC_Keypad will treat missing gross weight as
-    -- not ready unless a proper value is available.
-    local eng = LoGetEngineInfo and LoGetEngineInfo() or nil
-    local fuel = pick_number(eng, {'fuel_internal', 'FuelInternal', 'fuel', 'Fuel'})
-    if fuel then return nil end
     return nil
 end
 
@@ -69,22 +81,16 @@ local function get_trim_deg()
     local mech = LoGetMechInfo and LoGetMechInfo() or nil
     local raw = pick_number(mech, {
         'stab_trim_deg', 'stabilator_trim_deg', 'elevator_trim_deg', 'pitch_trim_deg',
-        'StabTrim', 'stabilator', 'elevator', 'Elevator', 'pitchTrim'
+        'StabTrim', 'stabilator', 'elevator', 'Elevator', 'pitchTrim', 'PitchTrim'
     })
     if raw then
-        -- If a normalized -1..1 control-surface value is returned, scale it
-        -- into the Hornet catapult-trim range.  If the value is already degrees,
-        -- keep it.
-        if raw >= -1.2 and raw <= 1.2 then
-            return raw * 20.0
-        end
+        if raw >= -1.2 and raw <= 1.2 then return raw * 20.0 end
         return raw
     end
-
-    -- Optional draw-argument probing.  These IDs are intentionally conservative;
-    -- if none match, nil is sent and UFC_Keypad falls back to manual confirmation.
     if LoGetAircraftDrawArgumentValue then
-        for _, arg in ipairs({15, 16, 17, 18, 345, 346}) do
+        -- Conservative probes. If they are wrong on a build, the Python side will
+        -- show the value and stop if it cannot converge.
+        for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
             local v = LoGetAircraftDrawArgumentValue(arg)
             if type(v) == 'number' and math.abs(v) > 0.001 then
                 return v * 20.0
@@ -106,34 +112,106 @@ local function send_telemetry()
 end
 
 local function command_constant(direction)
+    local names
     if direction == 'up' then
-        return rawget(_G, 'iCommandPlaneTrimPitchUp')
+        names = {'iCommandPlaneTrimPitchUp', 'iCommandPlaneTrimUp', 'iCommandTrimPitchUp'}
     elseif direction == 'down' then
-        return rawget(_G, 'iCommandPlaneTrimPitchDown')
+        names = {'iCommandPlaneTrimPitchDown', 'iCommandPlaneTrimDown', 'iCommandTrimPitchDown'}
+    else
+        return nil
     end
+    for _, name in ipairs(names) do
+        local v = rawget(_G, name)
+        if type(v) == 'number' then
+            log('trim command ' .. direction .. ' using ' .. name .. '=' .. tostring(v))
+            return v
+        end
+    end
+    log('trim command constant missing for ' .. tostring(direction))
     return nil
 end
 
 local function command_stop_constant(direction)
+    local names
     if direction == 'up' then
-        return rawget(_G, 'iCommandPlaneTrimPitchUpStop')
+        names = {'iCommandPlaneTrimPitchUpStop', 'iCommandPlaneTrimUpStop', 'iCommandTrimPitchUpStop'}
     elseif direction == 'down' then
-        return rawget(_G, 'iCommandPlaneTrimPitchDownStop')
+        names = {'iCommandPlaneTrimPitchDownStop', 'iCommandPlaneTrimDownStop', 'iCommandTrimPitchDownStop'}
+    else
+        return nil
+    end
+    for _, name in ipairs(names) do
+        local v = rawget(_G, name)
+        if type(v) == 'number' then return v end
     end
     return nil
 end
 
-local function handle_command(msg)
-    local direction = string.match(msg or '', '"direction"%s*:%s*"([^"]+)"')
+local function json_string(msg, key)
+    return string.match(msg or '', '"' .. key .. '"%s*:%s*"([^"]*)"')
+end
+
+local function json_number_value(msg, key)
+    local text = string.match(msg or '', '"' .. key .. '"%s*:%s*([-+]?%d+%.?%d*)')
+    if text then return tonumber(text) end
+    return nil
+end
+
+local function handle_clickable(msg)
+    local device_id = json_number_value(msg, 'device')
+    local command = json_number_value(msg, 'command')
+    local value = json_number_value(msg, 'value')
+    local label = json_string(msg, 'label') or 'clickable'
+    local hold_ms = json_number_value(msg, 'hold_ms') or 0
+    local release_value = json_number_value(msg, 'release_value')
+    if not device_id or not command or value == nil then
+        log('bad clickable payload: ' .. tostring(msg))
+        return
+    end
+    local dev = GetDevice and GetDevice(device_id) or nil
+    if not dev or not dev.performClickableAction then
+        log('no clickable device/action for ' .. label .. ' device=' .. tostring(device_id))
+        return
+    end
+    dev:performClickableAction(command, value)
+    log(string.format('clickable %s dev=%s cmd=%s value=%s', label, tostring(device_id), tostring(command), tostring(value)))
+    if release_value ~= nil and hold_ms > 0 then
+        UFC_CVTRIM.pending_release = {
+            time = now_time() + hold_ms / 1000.0,
+            type = 'clickable',
+            device = dev,
+            command = command,
+            value = release_value,
+            label = label,
+        }
+    end
+end
+
+local function handle_trim(msg)
+    local direction = json_string(msg, 'direction')
     if direction ~= 'up' and direction ~= 'down' then return end
+    local pulse_ms = json_number_value(msg, 'pulse_ms') or 120
     local cmd = command_constant(direction)
     if type(cmd) ~= 'number' then return end
     LoSetCommand(cmd, 1)
+    log('trim pulse ' .. direction .. ' cmd=' .. tostring(cmd))
     UFC_CVTRIM.pending_release = {
-        time = (LoGetModelTime and LoGetModelTime() or socket.gettime()) + 0.12,
+        time = now_time() + pulse_ms / 1000.0,
+        type = 'trim',
         direction = direction,
         cmd = cmd,
     }
+end
+
+local function handle_command(msg)
+    local typ = json_string(msg, 'type')
+    if typ == 'clickable' then
+        handle_clickable(msg)
+    elseif typ == 'trim' then
+        handle_trim(msg)
+    else
+        log('unknown command: ' .. tostring(msg))
+    end
 end
 
 local function poll_commands()
@@ -147,13 +225,19 @@ end
 local function release_pending()
     local p = UFC_CVTRIM.pending_release
     if not p then return end
-    local now = LoGetModelTime and LoGetModelTime() or socket.gettime()
-    if now < p.time then return end
-    local stop_cmd = command_stop_constant(p.direction)
-    if type(stop_cmd) == 'number' then
-        LoSetCommand(stop_cmd, 1)
-    else
-        LoSetCommand(p.cmd, 0)
+    if now_time() < p.time then return end
+    if p.type == 'clickable' then
+        p.device:performClickableAction(p.command, p.value)
+        log(string.format('clickable release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value)))
+    elseif p.type == 'trim' then
+        local stop_cmd = command_stop_constant(p.direction)
+        if type(stop_cmd) == 'number' then
+            LoSetCommand(stop_cmd, 1)
+            log('trim stop ' .. p.direction .. ' stop_cmd=' .. tostring(stop_cmd))
+        else
+            LoSetCommand(p.cmd, 0)
+            log('trim release ' .. p.direction .. ' cmd=' .. tostring(p.cmd))
+        end
     end
     UFC_CVTRIM.pending_release = nil
 end
@@ -163,7 +247,7 @@ LuaExportAfterNextFrame = function()
     if prev_after_next_frame then prev_after_next_frame() end
     poll_commands()
     release_pending()
-    local now = LoGetModelTime and LoGetModelTime() or socket.gettime()
+    local now = now_time()
     if now - UFC_CVTRIM.last_send >= UFC_CVTRIM.send_interval then
         UFC_CVTRIM.last_send = now
         send_telemetry()
