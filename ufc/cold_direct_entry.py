@@ -2,6 +2,8 @@
 """Minimal cold-start setup/checklist page and DCS-session lifecycle override.
 
 Current UI rule:
+- Before fresh engine RPM is known, show a plain CHECKING AIRCRAFT state only;
+  no setup choices are exposed yet.
 - DAY/NIGHT and LAND/CV are selected on a separate setup screen before the cold
   checklist is unlocked.
 - Setup requires two START confirmations.
@@ -208,25 +210,25 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         self._cold_cells = {}
         self._cold_status_cells = {}
 
-        self._cold_plain_label("title", 8, 22, 1008, 58, 32, True)
-        self._cold_plain_label("rpm", 8, 104, 1008, 72, 30, True)
-        self._cold_plain_label("step", 8, 205, 1008, 94, 30, True)
-        self._cold_plain_label("hint", 70, 318, 884, 96, 22, False)
-        self._cold_plain_label("status", 8, 455, 1008, 44, 15, False)
+        self._cold_plain_label("title", 8, 20, 1008, 58, 31, True)
+        self._cold_plain_label("rpm", 8, 100, 1008, 70, 29, True)
+        self._cold_plain_label("step", 8, 196, 1008, 86, 28, True)
+        self._cold_plain_label("hint", 80, 302, 864, 72, 18, False)
+        self._cold_plain_label("status", 8, 378, 1008, 34, 13, False)
 
-        # Setup-only choices. These are intentionally separate from the checklist page.
+        # Setup-only choices. They are not visible until fresh RPM has confirmed a cold aircraft.
         setup_buttons = [
-            ("DAY", P_DAY, 168, 420, 150, 64),
-            ("NIGHT", P_NIGHT, 330, 420, 170, 64),
-            ("LAND/CV", P_PROFILE, 512, 420, 230, 64),
+            ("DAY", P_DAY, 168, 430, 150, 58),
+            ("NIGHT", P_NIGHT, 330, 430, 170, 58),
+            ("LAND/CV", P_PROFILE, 512, 430, 230, 58),
         ]
         for text, pos, x, y, w, h in setup_buttons:
-            cell = self.place_cell(text, pos, x, y, w, h, font_size=16,
+            cell = self.place_cell(text, pos, x, y, w, h, font_size=15,
                                    register=False, page=PAGE, bold=True)
             self._cold_cells[pos] = cell
 
-        start = self.place_cell("START", P_START, 312, 500, 400, 86,
-                                font_size=26, register=False, page=PAGE, bold=True)
+        start = self.place_cell("START", P_START, 312, 505, 400, 82,
+                                font_size=25, register=False, page=PAGE, bold=True)
         self._cold_cells[P_START] = start
 
         reset = self.place_cell("RESET", P_RESET, 884, 545, 132, 42,
@@ -268,7 +270,7 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         if mode == STARTUP_MODE_UNKNOWN:
             self._cold_exec_phase = "CHECK"
             self._cold_last_action = "WAIT RPM"
-            self._cold_step_detail = "Need fresh L/R RPM from this mission."
+            self._cold_step_detail = "Waiting for IFEI_RPM_L and IFEI_RPM_R."
             if getattr(self, "_current_page", None) != PAGE:
                 self._show_page(PAGE)
             self._cold_refresh_ui()
@@ -576,6 +578,15 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
         profile = getattr(self, "_cold_profile", "land").upper()
         profile_txt = "CV" if profile == "CARRIER" else "LAND"
         display = getattr(self, "_cold_display_mode", "day").upper()
+        waiting_for_rpm = self._cold_detected_mode == STARTUP_MODE_UNKNOWN and not getattr(self, "_cold_first_mode_decided", False)
+        if waiting_for_rpm:
+            return {
+                "title": "CHECKING AIRCRAFT",
+                "rpm": f"L {l_txt}        R {r_txt}",
+                "step": "WAITING FOR ENGINE RPM",
+                "hint": hint,
+                "status": "",
+            }
         if getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_CHECKLIST:
             confirm = int(getattr(self, "_cold_entry_confirm_count", 0))
             progress = "STEP KEPT" if getattr(self, "_cold_setup_preserve_progress", False) else "NEW CHECKLIST"
@@ -618,16 +629,17 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
 
         is_page = getattr(self, "_current_page", None) == PAGE
         in_setup = getattr(self, "_cold_entry_stage", ENTRY_SETUP) != ENTRY_CHECKLIST
+        waiting_for_rpm = self._cold_detected_mode == STARTUP_MODE_UNKNOWN and not getattr(self, "_cold_first_mode_decided", False)
         for pos in (P_DAY, P_NIGHT, P_PROFILE):
             cell = getattr(self, "_cold_cells", {}).get(pos)
             if cell:
-                cell.setVisible(is_page and in_setup)
+                cell.setVisible(is_page and in_setup and not waiting_for_rpm)
         reset = getattr(self, "_cold_cells", {}).get(P_RESET)
         if reset:
-            reset.setVisible(is_page and not in_setup)
+            reset.setVisible(is_page and not in_setup and not waiting_for_rpm)
         start = getattr(self, "_cold_cells", {}).get(P_START)
         if start:
-            start.setVisible(is_page)
+            start.setVisible(is_page and not waiting_for_rpm)
 
     def _cold_play_startup_animation(self, return_page: Optional[str] = None, after: Optional[Callable[[], None]] = None):
         overlay = install_startup_overlay(self)
