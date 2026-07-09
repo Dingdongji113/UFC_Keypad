@@ -64,12 +64,23 @@ def install_cold_direct_entry(UFCKeypadWindowClass) -> None:
 
     def _cold_play_startup_animation(self, return_page: Optional[str] = None, after: Optional[Callable[[], None]] = None):
         overlay = install_startup_overlay(self)
+        hold_seconds = MIN_STARTUP_ANIM_MS / 1000.0
+
+        # The overlay has its own auto-finish timer driven by ready_hold_seconds.
+        # Delaying only our callback is not enough; the overlay would still close
+        # itself after its default short ready hold.  Raise its internal hold time
+        # before marking it ONLINE/READY.
+        try:
+            overlay.ready_hold_seconds = max(float(getattr(overlay, "ready_hold_seconds", 0.0)), hold_seconds)
+        except Exception:
+            pass
+
         try:
             overlay.on_dcs_signal("startup_manager", "ready")
         except Exception:
             pass
 
-        overlay_hold_ms = int((getattr(overlay, "ready_hold_seconds", 0.9) + 0.25) * 1000)
+        overlay_hold_ms = int((getattr(overlay, "ready_hold_seconds", hold_seconds) + 0.25) * 1000)
         hold_ms = max(MIN_STARTUP_ANIM_MS, overlay_hold_ms)
 
         def _after_overlay():
