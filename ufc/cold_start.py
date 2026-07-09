@@ -27,8 +27,8 @@ do not freeze the touch panel UI.
 """
 from __future__ import annotations
 
-import time
 from typing import Any, Callable, Dict, List
+import time
 
 from PyQt6.QtCore import Qt, QTimer
 
@@ -121,14 +121,55 @@ def _pct_to_bios(percent: int) -> int:
     return round(percent / 100 * 65535)
 
 
+def _is_empty(value: Any) -> bool:
+    return value is None or value == ""
+
+
+def _merge_control(default: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge user config over built-in defaults without letting stale empty IDs win.
+
+    This matters when a user extracts a new build over an old folder: the old
+    ``ufc_config.json`` may still contain ``"id": ""`` placeholders.  A plain
+    dict.update would erase the newly-added safe defaults and make every action
+    show NO ID.
+    """
+    result = default.copy()
+
+    default_sequence = default.get("sequence")
+    override_sequence = override.get("sequence")
+    if isinstance(default_sequence, list) or isinstance(override_sequence, list):
+        base_sequence = default_sequence if isinstance(default_sequence, list) else []
+        user_sequence = override_sequence if isinstance(override_sequence, list) else []
+        merged_sequence: List[Dict[str, Any]] = []
+        max_len = max(len(base_sequence), len(user_sequence))
+        for i in range(max_len):
+            base = base_sequence[i].copy() if i < len(base_sequence) and isinstance(base_sequence[i], dict) else {}
+            user = user_sequence[i] if i < len(user_sequence) and isinstance(user_sequence[i], dict) else {}
+            merged = base.copy()
+            for k, v in user.items():
+                # Empty user placeholders do not override non-empty defaults.
+                if _is_empty(v) and not _is_empty(base.get(k)):
+                    continue
+                merged[k] = v
+            merged_sequence.append(merged)
+        result["sequence"] = merged_sequence
+
+    for k, v in override.items():
+        if k == "sequence":
+            continue
+        if _is_empty(v) and not _is_empty(default.get(k)):
+            continue
+        result[k] = v
+    return result
+
+
 def _merged_config() -> Dict[str, Any]:
     cfg = load_config()
     controls = {key: value.copy() for key, value in DEFAULT_CONTROLS.items()}
     for key, value in (cfg.get("cold_start_controls", {}) or {}).items():
         if isinstance(value, dict):
-            merged = controls.get(key, {}).copy()
-            merged.update(value)
-            controls[key] = merged
+            default = controls.get(key, {})
+            controls[key] = _merge_control(default, value)
         else:
             controls[key] = value
 
@@ -162,6 +203,13 @@ def patch_cold_start(UFCKeypadWindowClass):
         orig_init_ui(self)
         self._cold_start_setup_state()
         self._init_cold_start_page()
+        # Replace the old reserved slot with the visible COLD START entry.
+        cold_entry = getattr(self, "cells", {}).get((201, 3))
+        if cold_entry is not None:
+            cold_entry.setText("4  COLD START")
+            if getattr(cold_entry, "_label_font", None) is not None:
+                cold_entry._label_font.setBold(True)
+                cold_entry.label.setFont(cold_entry._label_font)
         # Original init_ui ends on local_icp before this page exists.  Re-apply
         # visibility so the new cold-start widgets start hidden.
         self._show_page(self._current_page)
@@ -195,6 +243,7 @@ def patch_cold_start(UFCKeypadWindowClass):
     UFCKeypadWindowClass._cold_skip = _cold_skip
     UFCKeypadWindowClass._cold_set_display_mode = _cold_set_display_mode
     UFCKeypadWindowClass._cold_set_profile = _cold_set_profile
+    UFCKeypadWindowClass._cold_entries_from_config = _cold_entries_from_config
     UFCKeypadWindowClass._cold_send_configured = _cold_send_configured
     UFCKeypadWindowClass._cold_send_configured_async = _cold_send_configured_async
     UFCKeypadWindowClass._cold_run_sequence_entries = _cold_run_sequence_entries
