@@ -12,6 +12,7 @@ a = Analysis(
     datas=[
         (str(spec_dir / 'FA-18C_Hornet_Up_Front_Controller.ttf'), '.'),
         (str(spec_dir / 'ufc_config.json'), '.'),
+        (str(spec_dir / 'dcs_export' / 'UFC_Keypad_CVTrim.lua'), 'dcs_export'),
     ],
     hiddenimports=[
         'ufc',
