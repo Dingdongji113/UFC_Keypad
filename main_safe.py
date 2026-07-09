@@ -79,7 +79,9 @@ def main():
         import ufc.input as input_mod
         import ufc.dcs_bios as dcs_mod
         from ufc.ifei_rpm import install_ifei_rpm_fallback
+        from ufc.realtime_rpm import install_realtime_rpm_callbacks
         install_ifei_rpm_fallback()
+        install_realtime_rpm_callbacks()
 
         def _noop(*args, **kwargs):
             return False
