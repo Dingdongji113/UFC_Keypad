@@ -44,13 +44,13 @@
       "sequence": [
         {
           "id": "CANOPY_SW",
-          "value": 2,
-          "delay_ms": 6000
+          "value": 0,
+          "delay_ms": 6500
         },
         {
           "id": "CANOPY_SW",
           "value": 1,
-          "delay_ms": 80
+          "delay_ms": 100
         }
       ]
     },
@@ -118,7 +118,7 @@
     },
     "ecm_receive": {
       "id": "ECM_MODE_SW",
-      "value": 1
+      "value": 3
     },
     "ins_land": {
       "id": "INS_SW",
