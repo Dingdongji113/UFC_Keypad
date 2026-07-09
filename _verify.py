@@ -41,8 +41,8 @@ app = QApplication.instance() or QApplication(sys.argv)
 
 from ufc.ui import UFCKeypadWindow, SettingsWindow
 from ufc.dcs_bios import DCSBIOSReceiver
-from ufc.ifei_rpm import install_ifei_rpm_fallback
-from ufc.realtime_rpm import install_realtime_rpm_callbacks
+from ufc.ifei_rpm import install_ifei_rpm_fallback, IFEI_RPM_L_ADDR, IFEI_RPM_R_ADDR
+from ufc.realtime_rpm import install_realtime_rpm_callbacks, _decode_rpm_state
 import ufc.cold_start as CS
 import ufc.cold_direct_entry as CDE
 import ufc.cold_setup_split as CSS
@@ -71,11 +71,15 @@ assert combo is not None
 print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
       f"morse cells={len(w._morse_cells)}, light displays={len(w._light_displays)})")
 
-# ---- 3a. IFEI RPM fallback / forced injection ----
+# ---- 3a. IFEI RPM fallback / forced injection / state polling ----
 rx = DCSBIOSReceiver()
 rx._use_fallback_addresses()
 assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
 assert rx.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
+# State polling fallback: all-zero cold-dark bytes decode to 0, not empty/unknown.
+assert _decode_rpm_state(rx.parser, IFEI_RPM_L_ADDR, 3) == "0"
+rx.parser.state[IFEI_RPM_R_ADDR:IFEI_RPM_R_ADDR + 3] = b"075"
+assert _decode_rpm_state(rx.parser, IFEI_RPM_R_ADDR, 3) == "075"
 # Simulate an external Addresses.h/JSON path that loaded UFC fields but omitted IFEI.
 rx_external = DCSBIOSReceiver()
 rx_external.parser.inject_address_map({0x7424: ("UFC_COMM1_DISPLAY", 2)})
@@ -88,7 +92,7 @@ assert rx_external.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_L"][0] == "left_engine_rpm"
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_R"][0] == "right_engine_rpm"
 assert getattr(DCSBIOSReceiver, "_realtime_rpm_patch_installed", False)
-print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, forced injection + realtime callbacks enabled)")
+print("[3a] IFEI RPM FALLBACK OK  (forced injection + state polling + realtime callbacks enabled)")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
