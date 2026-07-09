@@ -7,7 +7,9 @@ text requirement while making the cold pages match the main UFC keypad style:
 - setup buttons are centered as DAY / NIGHT / LAND / CV;
 - returning from RESET setup preserves the current step number and restores the
   actual checklist step title instead of showing CONFIRM SETUP;
-- stale BATTERY_SW=0 configs are corrected to BATTERY_SW=2 for battery ON.
+- stale BATTERY_SW=0 configs are corrected to BATTERY_SW=2 for battery ON;
+- stale canopy / ECM configs are corrected to the observed DCS-BIOS state order;
+- DISPLAY BRIGHTNESS is executed immediately after APU OFF.
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from ufc.cold_setup_split import P_CV, P_LAND
 
 
 def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
-    """Install final cold UI layout/style and battery command fixups."""
+    """Install final cold UI layout/style, step order, and command fixups."""
     if getattr(UFCKeypadWindowClass, "_cold_ui_fixups_installed", False):
         return
     UFCKeypadWindowClass._cold_ui_fixups_installed = True
@@ -96,6 +98,32 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         cell._var_text = text
         cell.update()
 
+    def _cold_step_list(self):
+        """Authoritative 21-step checklist with brightness after APU OFF."""
+        return [
+            ("BATTERY ON", "send", "battery_on", "Auto command."),
+            ("APU START", "send", "apu_start", "Auto command."),
+            ("APU WAIT", "timer", self.APU_TO_RIGHT_CRANK_MS if hasattr(self, "APU_TO_RIGHT_CRANK_MS") else 5000, "Wait 5 seconds before right engine."),
+            ("APU READY?", "user", "", "Confirm APU ready, then START."),
+            ("RIGHT CRANK", "send", "right_engine_crank", "Auto command."),
+            ("RIGHT IDLE", "user", "", "Set right throttle IDLE, then START."),
+            ("RIGHT STABLE?", "flag_right", "", "Confirm right engine stable."),
+            ("LEFT CRANK", "send", "left_engine_crank", "Auto command."),
+            ("LEFT IDLE", "user", "", "Set left throttle IDLE, then START."),
+            ("LEFT STABLE?", "flag_left", "", "Confirm left engine stable."),
+            ("APU OFF", "apu_off", "apu_off", "Auto command."),
+            ("BRIGHTNESS", "display_brightness", "", "Apply selected DAY/NIGHT preset."),
+            ("CANOPY CLOSE", "supervised", "canopy_close", "Program executes; monitor cockpit."),
+            ("BLEED AIR", "supervised", "bleed_air_cycle", "Program executes; monitor cockpit."),
+            ("TRIM RESET", "supervised", "trim_reset", "Program executes; monitor cockpit."),
+            ("FCS RESET", "supervised", "fcs_reset", "Program executes; monitor cockpit."),
+            ("ECM REC", "supervised", "ecm_receive", "Program executes; monitor cockpit."),
+            ("IFF MANUAL", "user", "", "Open IFF manually, then START."),
+            ("LOCAL ICP", "unlock", "", "Verify LOCAL ICP ready."),
+            ("INS", "ins", "", "Set selected LAND/CV profile."),
+            ("COMPLETE", "complete", "", "Done."),
+        ]
+
     def _cold_current_step_text(self):
         idx = int(getattr(self, "_cold_step_index", -1))
         steps = self._cold_step_list()
@@ -141,12 +169,23 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             for entry in entries:
                 if str(entry.get("id", "")).strip() == "BATTERY_SW":
                     entry["value"] = 2
+        elif key == "canopy_close":
+            # Observed state order is OPEN=2 / HOLD=1 / CLOSE=0.
+            # Old configs used 2 first, which re-opened/held the canopy instead of closing it.
+            return [
+                {"id": "CANOPY_SW", "value": 0, "delay_ms": 6500},
+                {"id": "CANOPY_SW", "value": 1, "delay_ms": 100},
+            ]
+        elif key == "ecm_receive":
+            # Observed state order is OFF/STBY/BIT/REC/XMIT, so REC is 3.
+            return [{"id": "ECM_MODE_SW", "value": 3, "delay_ms": 500}]
         return entries
 
     UFCKeypadWindowClass._cold_label_style = _cold_label_style
     UFCKeypadWindowClass._cold_plain_label = _cold_plain_label
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_set_cell = _cold_set_cell
+    UFCKeypadWindowClass._cold_step_list = _cold_step_list
     UFCKeypadWindowClass._cold_enter_checklist = _cold_enter_checklist
     UFCKeypadWindowClass._cold_current_step_text = _cold_current_step_text
     UFCKeypadWindowClass._cold_entries_from_config = _cold_entries_from_config
