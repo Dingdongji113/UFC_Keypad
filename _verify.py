@@ -71,15 +71,24 @@ assert combo is not None
 print(f"[3] CONSTRUCT OK  (local cells={len(w.cells)}, "
       f"morse cells={len(w._morse_cells)}, light displays={len(w._light_displays)})")
 
-# ---- 3a. IFEI RPM fallback ----
+# ---- 3a. IFEI RPM fallback / forced injection ----
 rx = DCSBIOSReceiver()
 rx._use_fallback_addresses()
 assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
 assert rx.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
+# Simulate an external Addresses.h/JSON path that loaded UFC fields but omitted IFEI.
+rx_external = DCSBIOSReceiver()
+rx_external.parser.inject_address_map({0x7424: ("UFC_COMM1_DISPLAY", 2)})
+rx_external.parser.address_to_field.pop(0x749E, None)
+rx_external.parser.address_to_field.pop(0x74A2, None)
+rx_external._addr_map_built = True
+rx_external._learn_addresses()
+assert rx_external.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
+assert rx_external.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_L"][0] == "left_engine_rpm"
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_R"][0] == "right_engine_rpm"
 assert getattr(DCSBIOSReceiver, "_realtime_rpm_patch_installed", False)
-print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, realtime callbacks enabled)")
+print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, forced injection + realtime callbacks enabled)")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
