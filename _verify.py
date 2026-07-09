@@ -108,11 +108,12 @@ for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
     assert w._current_page == p, p
 print("[4] PAGE SWITCH OK  (local_icp / select / morse_light / light_control / cold_start)")
 
-# ---- 4b. 极简冷启动页 + 任意一发 RPM gating + 断线重置 ----
+# ---- 4b. setup gate + 极简冷启动页 + 任意一发 RPM gating + 断线重置 ----
 w.dcs_bios.latest.clear()
 w._cold_reset_session_state("verify start")
 assert w._cold_state == "idle"
 assert w._cold_step_index == -1
+assert w._cold_entry_stage == CDE.ENTRY_SETUP
 w._show_page("local_icp")
 w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
@@ -122,32 +123,55 @@ assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
 # fresh left low only -> still unknown
 w._update_display("left_engine_rpm", "  0")
 assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
-# fresh both low -> auto cold page, progress still zeroed
+# fresh both low -> auto setup page, not checklist yet
 w._cold_first_mode_decided = False
 w._update_display("right_engine_rpm", "  0")
 assert w._current_page == "cold_start"
-assert w._cold_last_action == "COLD START READY"
+assert w._cold_last_action == "SELECT SETUP"
 lines = w._cold_status_lines()
+assert lines["title"] == "COLD START SETUP"
 assert "L 000.0%" in lines["rpm"] and "R 000.0%" in lines["rpm"]
+assert "CONFIRM 0/2" in lines["hint"]
 assert set(w._cold_status_cells.keys()) == {"title", "rpm", "step", "hint", "status"}
 steps = w._cold_step_list()
 assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
+assert not any(step[0] == "DISPLAY MODE" for step in steps)
+
+# DAY/NIGHT and LAND/CV are setup-only choices; START must confirm twice before checklist unlock.
+w.on_cell_click((300, 5))  # NIGHT
+assert w._cold_display_mode == "night"
+assert w._cold_entry_confirm_count == 0
+w.on_cell_click((300, 6))  # LAND/CV toggle
+assert w._cold_profile in ("land", "carrier")
+w.on_cell_click((300, 0))  # first setup confirm
+assert w._cold_entry_stage == CDE.ENTRY_SETUP
+assert w._cold_entry_confirm_count == 1
+assert w._cold_state == "idle"
+w.on_cell_click((300, 0))  # second setup confirm -> checklist unlocked
+assert w._cold_entry_stage == CDE.ENTRY_CHECKLIST
+assert w._cold_entry_confirm_count == 0
+assert w._cold_state == "idle"
+assert w._cold_last_action == "COLD START READY"
+assert w._cold_status_lines()["title"] == "F/A-18C COLD START"
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
 w._cold_abort()
 assert w._cold_step_index == -1
 assert w._cold_state == "aborted"
+assert w._cold_entry_stage == CDE.ENTRY_SETUP
 
 # Simulate leaving a cold mission: old latest still contains 0/0, but timeout reset must remove it and clear step progress.
 w.dcs_bios.latest["IFEI_RPM_L"] = "  0"
 w.dcs_bios.latest["IFEI_RPM_R"] = "  0"
 w._cold_step_index = 8
 w._cold_state = "running"
+w._cold_entry_stage = CDE.ENTRY_CHECKLIST
 w._cold_reset_session_state("verify mission switch")
 assert "IFEI_RPM_L" not in w.dcs_bios.latest
 assert "IFEI_RPM_R" not in w.dcs_bios.latest
 assert w._cold_step_index == -1
 assert w._cold_state == "idle"
+assert w._cold_entry_stage == CDE.ENTRY_SETUP
 w._show_page("local_icp")
 w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
 assert w._current_page == "cold_start"
@@ -161,7 +185,7 @@ assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w._cold_reset_session_state("verify suffix parse")
 w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (minimal page, progress reset, live RPM, APU wait 5s)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (setup double-confirm, progress reset, live RPM, APU wait 5s)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
