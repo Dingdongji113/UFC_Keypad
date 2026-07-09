@@ -17,8 +17,8 @@ mods = [
     f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
     f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py",
-    f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/cold_start.py",
-    f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/windowing.py", f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/realtime_rpm.py",
+    f"{PKG_PATH}/cold_start.py", f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -29,7 +29,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import PyQt6  # noqa
 for name in ["constants", "crashlog", "config", "fonts", "morse",
              "colors", "dcs_bios", "input", "widgets", "startup",
-             "windowing", "ifei_rpm", "cold_start", "cold_direct_entry", "ui"]:
+             "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry", "ui"]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK  (所有子模块均可独立导入)")
 
@@ -42,6 +42,7 @@ app = QApplication.instance() or QApplication(sys.argv)
 from ufc.ui import UFCKeypadWindow, SettingsWindow
 from ufc.dcs_bios import DCSBIOSReceiver
 from ufc.ifei_rpm import install_ifei_rpm_fallback
+from ufc.realtime_rpm import install_realtime_rpm_callbacks
 import ufc.cold_start as CS
 import ufc.cold_direct_entry as CDE
 from ufc.cold_start import patch_cold_start
@@ -55,6 +56,7 @@ from ufc.startup import (
     install_startup_overlay,
 )
 install_ifei_rpm_fallback()
+install_realtime_rpm_callbacks()
 patch_cold_start(UFCKeypadWindow)
 install_cold_direct_entry(UFCKeypadWindow)
 w = UFCKeypadWindow()
@@ -73,7 +75,8 @@ assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
 assert rx.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_L"][0] == "left_engine_rpm"
 assert DCSBIOSReceiver.UFC_FIELDS["IFEI_RPM_R"][0] == "right_engine_rpm"
-print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, len=3)")
+assert getattr(DCSBIOSReceiver, "_realtime_rpm_patch_installed", False)
+print("[3a] IFEI RPM FALLBACK OK  (L @ 0x749E, R @ 0x74A2, realtime callbacks enabled)")
 
 # [3b] 触发真实 GUI 事件路径（复现 showEvent/paintEvent 类错误，如 _user32/_dim 缺失）
 w.show()
@@ -122,6 +125,10 @@ w._cold_first_mode_decided = False
 w._update_display("right_engine_rpm", "  0")
 assert w._current_page == "cold_start"
 assert w._cold_last_action == "AUTO COLD START ENTRY"
+assert "LIVE IFEI RPM" in w._cold_status_lines()["engines"]
+assert "00.0%" in w._cold_status_lines()["engines"]
+steps = w._cold_step_list()
+assert steps[2][1] == "timer" and steps[2][2] == CDE.APU_TO_RIGHT_CRANK_MS
 w.on_cell_click((300, 0))  # START -> ARMED
 assert w._cold_state == "armed"
 w._cold_abort()
@@ -145,7 +152,7 @@ assert CDE.MIN_STARTUP_ANIM_MS == 5000
 w._cold_reset_session_state("verify suffix parse")
 w._update_display("left_engine_rpm", "120F")
 assert w._cold_detected_mode == CS.STARTUP_MODE_NON_COLD
-print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (fresh RPM only, stale RPM cleared, min anim 5s)")
+print("[4b] COLD ENTRY / LOCAL ICP GATING OK  (fresh RPM only, live RPM display, APU wait 5s, min anim 5s)")
 
 # ---- 4c. 冷启动配置键 ----
 cs_cfg = CS._merged_config()
