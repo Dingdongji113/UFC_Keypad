@@ -28,6 +28,7 @@ a = Analysis(
         'ufc.windowing',
         'ufc.ifei_rpm',
         'ufc.cold_start',
+        'ufc.cold_direct_entry',
         'ufc.ui',
     ],
     hookspath=[],
