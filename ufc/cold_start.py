@@ -20,15 +20,15 @@ Implementation scope:
 - Applies DAY/NIGHT display brightness presets to LDDI/RDDI/AMPCD/HUD through
   config-driven DCS-BIOS controls.
 
-DCS-BIOS control identifiers for switches/knobs differ across DCS-BIOS builds.
-For safety, all aircraft-changing identifiers are configurable.  Missing IDs are
-reported as "NO ID" and the sequencer continues/holds according to the step type
-instead of blindly guessing.
+DCS-BIOS control identifiers are configurable through ``ufc_config.json``.  The
+built-in defaults target DCS-Skunkworks DCS-BIOS FA-18C_hornet.lua identifiers.
+Timed sequences are executed with QTimer so long actions, such as canopy close,
+do not freeze the touch panel UI.
 """
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List
 
 from PyQt6.QtCore import Qt, QTimer
 
@@ -64,36 +64,55 @@ DEFAULT_DISPLAY_PRESETS = {
     },
 }
 
-# Safer default: no real aircraft-changing control IDs are guessed here.  The
-# user can fill these through ufc_config.json after confirming identifiers from
-# their DCS-BIOS FA-18C_hornet.json.
-#
 # A control may be either:
 #   {"id": "CONTROL", "value": 1}
-# or a supervised sequence:
+# or a timed sequence:
 #   {"sequence": [{"id": "CONTROL", "value": "INC", "repeat": 3, "delay_ms": 80}]}
 DEFAULT_CONTROLS = {
-    "battery_on": {"id": "", "value": 1},
-    "apu_start": {"id": "", "value": 1},
-    "right_engine_crank": {"id": "", "value": 1},
-    "left_engine_crank": {"id": "", "value": 1},
-    "apu_off": {"id": "", "value": 0},
-    "canopy_close": {"id": "", "value": 1},
-    "bleed_air_cycle": {
+    "battery_on": {"id": "BATTERY_SW", "value": 0},
+    "apu_start": {"id": "APU_CONTROL_SW", "value": 1},
+    "right_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 2},
+    "left_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 0},
+    "apu_off": {"id": "APU_CONTROL_SW", "value": 0},
+    "canopy_close": {
         "sequence": [
-            {"id": "", "value": "PULL", "delay_ms": 150},
-            {"id": "", "value": "INC", "repeat": 4, "delay_ms": 120},
+            {"id": "CANOPY_SW", "value": 2, "delay_ms": 6000},
+            {"id": "CANOPY_SW", "value": 1, "delay_ms": 80},
         ]
     },
-    "trim_reset": {"id": "", "value": 1},
-    "fcs_reset": {"id": "", "value": 1},
-    "ecm_receive": {"id": "", "value": 1},
-    "ins_land": {"id": "", "value": 2},
-    "ins_carrier": {"id": "", "value": 1},
-    "display_lddi": {"id": "", "value_type": "analog"},
-    "display_rddi": {"id": "", "value_type": "analog"},
-    "display_ampcd": {"id": "", "value_type": "analog"},
-    "display_hud": {"id": "", "value_type": "analog"},
+    "bleed_air_cycle": {
+        "sequence": [
+            {"id": "BLEED_AIR_PULL", "value": 1, "delay_ms": 150},
+            {"id": "BLEED_AIR_KNOB", "value": 0, "delay_ms": 120},
+            {"id": "BLEED_AIR_KNOB", "value": 1, "delay_ms": 120},
+            {"id": "BLEED_AIR_KNOB", "value": 2, "delay_ms": 120},
+            {"id": "BLEED_AIR_KNOB", "value": 3, "delay_ms": 120},
+            {"id": "BLEED_AIR_KNOB", "value": 1, "delay_ms": 120},
+        ]
+    },
+    "trim_reset": {
+        "sequence": [
+            {"id": "TO_TRIM_BTN", "value": 1, "delay_ms": 80},
+            {"id": "TO_TRIM_BTN", "value": 0, "delay_ms": 80},
+        ]
+    },
+    "fcs_reset": {
+        "sequence": [
+            {"id": "FCS_RESET_BTN", "value": 1, "delay_ms": 80},
+            {"id": "FCS_RESET_BTN", "value": 0, "delay_ms": 80},
+        ]
+    },
+    "ecm_receive": {"id": "ECM_MODE_SW", "value": 1},
+    "ins_land": {"id": "INS_SW", "value": 2},
+    "ins_carrier": {"id": "INS_SW", "value": 1},
+    "display_lddi_select": {"id": "LEFT_DDI_BRT_SELECT", "day_value": 2, "night_value": 1},
+    "display_rddi_select": {"id": "RIGHT_DDI_BRT_SELECT", "day_value": 2, "night_value": 1},
+    "display_ampcd_select": {"id": "", "day_value": 1, "night_value": 0},
+    "display_hud_select": {"id": "", "day_value": 1, "night_value": 0},
+    "display_lddi": {"id": "LEFT_DDI_BRT_CTL", "value_type": "analog"},
+    "display_rddi": {"id": "RIGHT_DDI_BRT_CTL", "value_type": "analog"},
+    "display_ampcd": {"id": "AMPCD_BRT_CTL", "value_type": "analog"},
+    "display_hud": {"id": "HUD_SYM_BRT", "value_type": "analog"},
 }
 
 
@@ -177,6 +196,8 @@ def patch_cold_start(UFCKeypadWindowClass):
     UFCKeypadWindowClass._cold_set_display_mode = _cold_set_display_mode
     UFCKeypadWindowClass._cold_set_profile = _cold_set_profile
     UFCKeypadWindowClass._cold_send_configured = _cold_send_configured
+    UFCKeypadWindowClass._cold_send_configured_async = _cold_send_configured_async
+    UFCKeypadWindowClass._cold_run_sequence_entries = _cold_run_sequence_entries
     UFCKeypadWindowClass._cold_apply_display_brightness = _cold_apply_display_brightness
     UFCKeypadWindowClass._cold_unlock_local_icp = _cold_unlock_local_icp
     UFCKeypadWindowClass._cold_status_lines = _cold_status_lines
@@ -201,6 +222,7 @@ def _cold_start_setup_state(self):
     self._cold_apu_off = False
     self._cold_display_brightness_applied = False
     self._cold_normal_ufc_locked = True
+    self._cold_sequence_token = 0
     self._cold_cells = {}
     self._cold_status_cells = {}
     self._cold_last_action = "READY"
@@ -359,12 +381,11 @@ def _cold_run_next_step(self):
     self._cold_refresh_ui()
 
     if kind == "send":
-        self._cold_send_configured(payload)
-        QTimer.singleShot(500, lambda: _cold_advance_if_running(self))
+        self._cold_send_configured_async(payload, lambda: _cold_advance_if_running(self))
     elif kind == "supervised":
-        self._cold_send_configured(payload)
         self._cold_last_action = f"SUPERVISE {title}"
-        QTimer.singleShot(900, lambda: _cold_advance_if_running(self))
+        self._cold_refresh_ui()
+        self._cold_send_configured_async(payload, lambda: _cold_advance_if_running(self))
     elif kind == "user":
         self._cold_state = "wait_user"
         self._cold_last_action = str(payload)
@@ -377,9 +398,10 @@ def _cold_run_next_step(self):
         self._cold_last_action = "BOTH ENGINES STABLE"
         QTimer.singleShot(500, lambda: _cold_advance_if_running(self))
     elif kind == "apu_off":
-        self._cold_send_configured(payload)
-        self._cold_apu_off = True
-        QTimer.singleShot(700, lambda: _cold_advance_if_running(self))
+        def _after_apu_off():
+            self._cold_apu_off = True
+            _cold_advance_if_running(self)
+        self._cold_send_configured_async(payload, _after_apu_off)
     elif kind == "select_display":
         self._cold_state = "select_display"
         self._cold_last_action = "SELECT DAY OR NIGHT, THEN START"
@@ -390,11 +412,14 @@ def _cold_run_next_step(self):
         self._cold_unlock_local_icp()
         QTimer.singleShot(700, lambda: _cold_advance_if_running(self))
     elif kind == "ins":
-        self._cold_send_configured("ins_carrier" if self._cold_profile == "carrier" else "ins_land")
-        QTimer.singleShot(500, lambda: _cold_advance_if_running(self))
+        self._cold_send_configured_async(
+            "ins_carrier" if self._cold_profile == "carrier" else "ins_land",
+            lambda: _cold_advance_if_running(self),
+        )
     elif kind == "complete":
         self._cold_state = "complete"
         self._cold_last_action = "COLD START COMPLETE"
+        self._cold_refresh_ui()
 
 
 def _cold_advance_if_running(self):
@@ -404,6 +429,7 @@ def _cold_advance_if_running(self):
 
 
 def _cold_enter_hold(self, reason: str):
+    self._cold_sequence_token += 1
     self._cold_state = "hold"
     self._cold_hold_reason = reason
     self._cold_last_action = f"HOLD: {reason}"
@@ -412,6 +438,7 @@ def _cold_enter_hold(self, reason: str):
 
 
 def _cold_abort(self):
+    self._cold_sequence_token += 1
     self._cold_state = "aborted"
     self._cold_last_action = "ABORTED"
     self._cold_log("ABORTED")
@@ -420,6 +447,7 @@ def _cold_abort(self):
 
 def _cold_pause(self):
     if self._cold_state in ("running", "wait_user", "select_display"):
+        self._cold_sequence_token += 1
         self._cold_state = "paused"
         self._cold_last_action = "PAUSED"
         self._cold_log("PAUSED")
@@ -428,6 +456,7 @@ def _cold_pause(self):
 
 def _cold_skip(self):
     if self._cold_state in ("running", "wait_user", "hold", "select_display", "paused"):
+        self._cold_sequence_token += 1
         self._cold_state = "running"
         self._cold_step_index += 1
         self._cold_log("SKIP")
@@ -458,51 +487,91 @@ def _cold_set_profile(self, profile: str):
     self._cold_log(self._cold_last_action)
 
 
-def _cold_send_configured(self, key: str) -> bool:
+def _cold_entries_from_config(self, key: str) -> List[Dict[str, Any]]:
     cfg = _merged_config()
     item = cfg.get("cold_start_controls", {}).get(key, {})
     if not isinstance(item, dict):
         self._cold_log(f"{key}: INVALID CONFIG")
         self._cold_last_action = f"{self._cold_last_action} / BAD CFG"
-        return False
+        return []
 
-    sequence = item.get("sequence")
-    if isinstance(sequence, list):
-        any_sent = False
-        any_missing = False
-        for entry in sequence:
-            if not isinstance(entry, dict):
+    raw_sequence = item.get("sequence")
+    if isinstance(raw_sequence, list):
+        entries: List[Dict[str, Any]] = []
+        for raw in raw_sequence:
+            if not isinstance(raw, dict):
                 continue
-            ident = str(entry.get("id", "") or "").strip()
-            value = entry.get("value", entry.get("command", ""))
-            repeat = max(1, int(entry.get("repeat", 1) or 1))
-            delay_ms = max(0, int(entry.get("delay_ms", 0) or 0))
-            if not ident:
-                any_missing = True
-                continue
+            repeat = max(1, int(raw.get("repeat", 1) or 1))
             for _ in range(repeat):
-                ok = send_dcs_bios(ident, value)
-                any_sent = any_sent or ok
-                if delay_ms:
-                    time.sleep(delay_ms / 1000.0)
-        if any_missing:
-            self._cold_log(f"{key}: SEQ NO ID")
-            self._cold_last_action = f"{self._cold_last_action} / NO ID"
-        elif any_sent:
-            self._cold_log(f"{key}: SEQ OK")
-        return any_sent
+                entries.append({
+                    "id": raw.get("id", ""),
+                    "value": raw.get("value", raw.get("command", "")),
+                    "delay_ms": max(0, int(raw.get("delay_ms", 0) or 0)),
+                })
+        return entries
 
-    ident = str(item.get("id", "") or "").strip()
-    value = item.get("value", item.get("command", ""))
+    return [{
+        "id": item.get("id", ""),
+        "value": item.get("value", item.get("command", "")),
+        "delay_ms": max(0, int(item.get("delay_ms", 500) or 0)),
+    }]
+
+
+def _cold_send_configured(self, key: str) -> bool:
+    """Compatibility synchronous sender for short one-shot controls."""
+    sent = False
+    for entry in self._cold_entries_from_config(key):
+        ident = str(entry.get("id", "") or "").strip()
+        if not ident:
+            self._cold_log(f"{key}: NO ID")
+            self._cold_last_action = f"{self._cold_last_action} / NO ID"
+            continue
+        value = entry.get("value", "")
+        ok = send_dcs_bios(ident, value)
+        sent = sent or ok
+        self._cold_log(f"{key}: {ident} {value} {'OK' if ok else 'FAIL'}")
+        if not ok:
+            self._cold_enter_hold(f"{key} SEND FAILED")
+            return False
+    return sent
+
+
+def _cold_send_configured_async(self, key: str, done: Callable[[], None]) -> None:
+    entries = self._cold_entries_from_config(key)
+    self._cold_sequence_token += 1
+    token = self._cold_sequence_token
+    if not entries:
+        QTimer.singleShot(0, done)
+        return
+    self._cold_run_sequence_entries(key, entries, 0, token, done)
+
+
+def _cold_run_sequence_entries(self, key: str, entries: List[Dict[str, Any]], index: int, token: int, done: Callable[[], None]) -> None:
+    if token != getattr(self, "_cold_sequence_token", None):
+        return
+    if getattr(self, "_cold_state", None) != "running":
+        return
+    if index >= len(entries):
+        done()
+        return
+
+    entry = entries[index]
+    ident = str(entry.get("id", "") or "").strip()
+    delay_ms = max(0, int(entry.get("delay_ms", 0) or 0))
     if not ident:
         self._cold_log(f"{key}: NO ID")
         self._cold_last_action = f"{self._cold_last_action} / NO ID"
-        return False
+        self._cold_refresh_ui()
+        QTimer.singleShot(delay_ms, lambda: self._cold_run_sequence_entries(key, entries, index + 1, token, done))
+        return
+
+    value = entry.get("value", "")
     ok = send_dcs_bios(ident, value)
     self._cold_log(f"{key}: {ident} {value} {'OK' if ok else 'FAIL'}")
     if not ok:
         self._cold_enter_hold(f"{key} SEND FAILED")
-    return ok
+        return
+    QTimer.singleShot(delay_ms, lambda: self._cold_run_sequence_entries(key, entries, index + 1, token, done))
 
 
 def _cold_apply_display_brightness(self):
@@ -518,11 +587,23 @@ def _cold_apply_display_brightness(self):
         "hud": "HUD",
     }
     results = []
+
+    # Set known DAY/NIGHT selectors first.  Ambiguous selectors can be left with
+    # an empty id in config and will be skipped.
+    for target in ("lddi", "rddi", "ampcd", "hud"):
+        item = controls.get(f"display_{target}_select", {})
+        ident = str(item.get("id", "") or "").strip() if isinstance(item, dict) else ""
+        if not ident:
+            continue
+        value = item.get(f"{self._cold_display_mode}_value", item.get("value", ""))
+        ok = send_dcs_bios(ident, value)
+        results.append(f"{labels[target]} SEL {'OK' if ok else 'FAIL'}")
+
     for target in ("lddi", "rddi", "ampcd", "hud"):
         percent = int(preset.get(target, 0))
         item = controls.get(f"display_{target}", {})
-        ident = str(item.get("id", "") or "").strip()
-        value_type = item.get("value_type", "analog")
+        ident = str(item.get("id", "") or "").strip() if isinstance(item, dict) else ""
+        value_type = item.get("value_type", "analog") if isinstance(item, dict) else "analog"
         if not ident:
             results.append(f"{labels[target]} {percent}% NO ID")
             continue
