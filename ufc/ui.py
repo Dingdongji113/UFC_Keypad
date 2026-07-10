@@ -120,7 +120,7 @@ class UFCKeypadWindow(QWidget):
         if cur == 0:
             err = ctypes.get_last_error()
             if err != 0:
-                print(f"[窗口] ⚠️ GetWindowLongPtrW 失败: {err}")
+                print(f"[窗口] GetWindowLongPtrW 失败: {err}")
                 return
         new_style = cur
         changed = False
@@ -186,16 +186,19 @@ class UFCKeypadWindow(QWidget):
 
     def enable_native_touch(self, enable):
         """启用/禁用原生触控隔离（阻止触摸→鼠标转换）"""
+        if os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen":
+            self._native_touch_enabled = False
+            return
         hwnd = int(self.winId())
         if enable:
             if _register_native_touch(hwnd):
                 self._native_touch_enabled = True
-                print("[触控] ✅ 原生触控隔离已启用（触摸不再模拟鼠标）")
+                print("[触控] 原生触控隔离已启用（触摸不再模拟鼠标）")
                 config = load_config()
                 config["native_touch"] = True
                 save_config(config)
             else:
-                print("[触控] ❌ 原生触控注册失败（系统可能不支持）")
+                print("[触控] 原生触控注册失败（系统可能不支持）")
                 self._native_touch_enabled = False
         else:
             if _unregister_native_touch(hwnd):
@@ -307,7 +310,7 @@ class UFCKeypadWindow(QWidget):
             _uk = f"_uk_{field_name}"
             if not hasattr(self, _uk):
                 setattr(self, _uk, True)
-                print(f"[UI] ⚠️ 字段 {field_name} 不在 DISPLAY_POS_MAP 中")
+                print(f"[UI] 字段 {field_name} 不在 DISPLAY_POS_MAP 中")
     
     def _check_dcs_timeout(self):
         """看门狗：断连检测 + 自动恢复。使用 _last_packet_time（每次收包都更新，不受值去重影响）"""

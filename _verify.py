@@ -15,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # ---- 1. 编译 ----
 mods = [
-    "main.py", "main_safe.py", "install_dcs_export_bridge.py",
+    "main.py", "main_safe.py", "install_dcs_export_bridge.py", "probe_hornet_bridge.py",
     f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
     f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/windowing.py",
@@ -72,6 +72,9 @@ startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
 assert isinstance(startup, UFCBitStartupOverlay)
 s = SettingsWindow(w)
 assert attach_startup_style_settings(s) is not None
+w.dcs_bios.stop()
+w.dcs_bios.join(timeout=1.0)
+app.processEvents()
 print("[3] CONSTRUCT OK")
 
 # ---- 3a. IFEI/RPM 地址和轮询 ----
@@ -116,20 +119,20 @@ assert all(isinstance(v, QLabel) for v in w._cold_status_cells.values())
 w._cold_profile = "land"
 land_steps = w._cold_step_list()
 land_names = [s[0] for s in land_steps]
-assert len(land_steps) == 22
+assert len(land_steps) == 23
 assert land_names[0] == "EJECT SAFE OFF"
-assert land_names[11:14] == ["APU OFF", "BRIGHTNESS", "CANOPY CLOSE"]
+assert land_names[11:14] == ["APU OFF / FLAPS HALF", "BRIGHTNESS", "CANOPY / OXYGEN"]
 assert land_names[16:19] == ["FCS / RWR", "ECM REC", "MANUAL SETUP"]
 assert "IFF MANUAL" not in land_names
 assert "CAT TRIM" not in land_names
-assert land_names[-1] == "COMPLETE"
+assert land_names[-3:] == ["RADAR / INS", "HMD CAL / IFA", "COMPLETE"]
 
 w._cold_profile = "carrier"
 cv_steps = w._cold_step_list()
 cv_names = [s[0] for s in cv_steps]
-assert len(cv_steps) == 23
-assert cv_names[-2:] == ["CAT TRIM", "COMPLETE"]
-assert cv_steps[-2][1] == "cat_trim_auto"
+assert len(cv_steps) == 24
+assert cv_names[-3:] == ["CAT TRIM", "HMD CAL / IFA", "COMPLETE"]
+assert cv_steps[-3][1] == "cat_trim_auto"
 assert w._cv_trim_target_deg(44000) == 16.0
 assert w._cv_trim_target_deg(45000) == 17.0
 assert w._cv_trim_target_deg(48000) == 17.0
@@ -139,14 +142,77 @@ print("[4b] COLD STEP LIST OK")
 
 # ---- 4c. 控制值 / 直控 fallback / 亮度 / COMPLETE ----
 eject_entries = w._cold_entries_from_config("ejection_seat_arm")
-assert eject_entries[0] == {"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 150}
+assert eject_entries[0] == {"id": "EJECTION_SEAT_ARMED", "value": 0, "delay_ms": 150}
 assert eject_entries[1]["bridge"] == "clickable"
-assert eject_entries[1]["device"] == 7 and eject_entries[1]["command"] == 3006 and eject_entries[1]["value"] == 1.0
-assert w._cold_entries_from_config("battery_on")[0] == {"id": "BATTERY_SW", "value": 2}
+assert eject_entries[1]["device"] == 7 and eject_entries[1]["command"] == 3006 and eject_entries[1]["value"] == 0.0
+assert w._cold_entries_from_config("battery_on")[0] == {"id": "BATTERY_SW", "value": 2, "delay_ms": 500}
+apu_entries = w._cold_entries_from_config("apu_start")
+assert apu_entries[0] == {"id": "APU_CONTROL_SW", "value": 1, "delay_ms": 100}
+assert apu_entries[1]["device"] == 12 and apu_entries[1]["command"] == 3023 and apu_entries[1]["value"] == 1.0
+apu_off_entries = w._cold_entries_from_config("apu_off")
+assert apu_off_entries[0] == {"id": "APU_CONTROL_SW", "value": 0, "delay_ms": 100}
+assert apu_off_entries[1]["device"] == 12 and apu_off_entries[1]["command"] == 3023 and apu_off_entries[1]["value"] == 0.0
+apu_flaps_entries = w._cold_entries_from_config("apu_off_flaps_half")
+assert apu_flaps_entries[-2]["id"] == "FLAP_SW" and apu_flaps_entries[-2]["value"] == 1
+assert apu_flaps_entries[-1]["device"] == 2 and apu_flaps_entries[-1]["command"] == 3007 and apu_flaps_entries[-1]["value"] == 0.0
 ecm_entries = w._cold_entries_from_config("ecm_receive")
-assert ecm_entries[0] == {"id": "ECM_MODE_SW", "value": 1, "delay_ms": 150}
+assert ecm_entries[0] == {"id": "ECM_MODE_SW", "value": 3, "delay_ms": 150}
 assert ecm_entries[1]["bridge"] == "clickable"
-assert ecm_entries[1]["device"] == 66 and ecm_entries[1]["command"] == 3001 and ecm_entries[1]["value"] == 0.1
+assert ecm_entries[1]["device"] == 66 and ecm_entries[1]["command"] == 3001 and ecm_entries[1]["value"] == 0.3
+rwr_entries = w._cold_entries_from_config("fcs_reset_rwr_power")
+assert [(e.get("id"), e.get("value")) for e in rwr_entries[:3]] == [
+    ("FCS_RESET_BTN", 1), ("FCS_RESET_BTN", 0), ("RWR_POWER_BTN", 1)
+]
+assert rwr_entries[-1]["device"] == 53 and rwr_entries[-1]["command"] == 3001 and rwr_entries[-1]["value"] == 1.0
+oxygen_entries = w._cold_entries_from_config("canopy_oxygen")
+assert oxygen_entries[-2]["id"] == "OBOGS_SW" and oxygen_entries[-2]["value"] == 1
+assert oxygen_entries[-1]["device"] == 10 and oxygen_entries[-1]["command"] == 3001 and oxygen_entries[-1]["value"] == 1.0
+radar_entries = w._cold_entries_from_config("radar_opr")
+assert radar_entries[0]["id"] == "RADAR_SW" and radar_entries[0]["value"] == 2
+assert radar_entries[1]["device"] == 42 and radar_entries[1]["value"] == 0.2
+assert w._cold_entries_from_config("ins_land")[1]["value"] == 0.2
+assert w._cold_entries_from_config("ins_carrier")[1]["value"] == 0.1
+assert w._cold_entries_from_config("ins_ifa")[1]["value"] == 0.4
+assert w._cold_entries_from_config("ampcd_pb19")[-1]["command"] == 3029
+assert w._cold_entries_from_config("hmd_day")[-1]["value"] == 0.75
+assert w._cold_entries_from_config("hmd_night")[-1]["value"] == 0.35
+assert w._cold_entries_from_config("right_ddi_pb18")[-1]["command"] == 3028
+assert w._cold_entries_from_config("right_ddi_pb03")[-1]["command"] == 3013
+assert w._cold_entries_from_config("right_ddi_pb20")[-1]["command"] == 3030
+
+# Verify the new manual-confirm steps without waiting five seconds or sending
+# real cockpit commands.
+import ufc.cv_trim_auto as CVA
+assert CVA.INS_TO_AMPCD_DELAY_MS == 10000
+assert CVA.RDDI_OSB_INTERVAL_MS == 3000
+_orig_async = w._cold_send_configured_async
+_orig_single_shot = CVA.QTimer.singleShot
+try:
+    staged = []
+    w._cold_send_configured_async = lambda key, done: staged.append(key) or done()
+    CVA.QTimer.singleShot = lambda _ms, callback: callback()
+    w._cold_profile = "carrier"
+    w._cold_state = "running"
+    w._cold_step_index = [s[0] for s in w._cold_step_list()].index("RADAR / INS")
+    w._cold_run_next_step()
+    assert staged == ["radar_opr", "ins_carrier", "ampcd_pb19"]
+    assert w._cold_state == "wait_user"
+    assert w._cold_last_action == "RADAR / INS CONFIRM"
+
+    staged.clear()
+    w._cold_display_mode = "night"
+    w._cold_state = "running"
+    w._cold_step_index = [s[0] for s in w._cold_step_list()].index("HMD CAL / IFA")
+    w._cold_run_next_step()
+    assert staged == [
+        "hmd_night", "ins_ifa", "right_ddi_pb18", "right_ddi_pb18",
+        "right_ddi_pb03", "right_ddi_pb20",
+    ]
+    assert w._cold_state == "wait_user"
+    assert w._cold_last_action == "HMD CALIBRATE"
+finally:
+    w._cold_send_configured_async = _orig_async
+    CVA.QTimer.singleShot = _orig_single_shot
 
 # Verify mixed DCS-BIOS + bridge sequence execution order without sending real UDP.
 import ufc.dcs_bios as DB
@@ -167,8 +233,8 @@ try:
 finally:
     DB.send_dcs_bios = _orig_db_send
     DCF.send_direct_clickable = _orig_bridge
-assert sent == [("ECM_MODE_SW", 1)]
-assert bridge == [(66, 3001, 0.1, "ECM REC")]
+assert sent == [("ECM_MODE_SW", 3)]
+assert bridge == [(66, 3001, 0.3, "ECM REC")]
 
 w._cold_display_mode = "day"
 brightness_ids = [e["id"] for e in w._cold_display_brightness_entries()]
@@ -184,12 +250,21 @@ w._cold_profile = "carrier"
 w._cold_state = "running"
 w._cold_entry_stage = CDE.ENTRY_CHECKLIST
 w._current_page = "cold_start"
-w._cold_step_index = [s[0] for s in w._cold_step_list()].index("CAT TRIM")
-w._cold_run_next_step()
-loop = QEventLoop()
-QTimer.singleShot(200, loop.quit)
-loop.exec()
-assert w._cold_state == "complete" or w._cold_step_index == len(w._cold_step_list()) - 1
+cat_index = [s[0] for s in w._cold_step_list()].index("CAT TRIM")
+w._cold_step_index = cat_index
+_orig_async = w._cold_send_configured_async
+try:
+    # CAT TRIM now advances into HMD CAL / IFA. Stop that new step before it
+    # sends real cockpit commands during the offscreen regression test.
+    w._cold_send_configured_async = lambda _key, _done: None
+    w._cold_run_next_step()
+    loop = QEventLoop()
+    QTimer.singleShot(200, loop.quit)
+    loop.exec()
+finally:
+    w._cold_send_configured_async = _orig_async
+assert w._cold_step_index == cat_index + 1
+assert w._cold_step_list()[w._cold_step_index][0] == "HMD CAL / IFA"
 
 w._cold_state = "complete"
 w._cold_entry_stage = CDE.ENTRY_CHECKLIST

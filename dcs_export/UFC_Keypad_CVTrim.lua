@@ -20,6 +20,9 @@ UFC_CVTRIM.send_interval = 0.25
 UFC_CVTRIM.pending_release = nil
 UFC_CVTRIM.log_path = nil
 UFC_CVTRIM.last_command = 'none'
+UFC_CVTRIM.scan_from = nil
+UFC_CVTRIM.scan_to = nil
+UFC_CVTRIM.param_probe = ''
 
 local function now_time()
     return LoGetModelTime and LoGetModelTime() or socket.gettime()
@@ -65,10 +68,15 @@ local function json_string_value(name, value)
     return string.format('"%s":"%s"', name, value)
 end
 
-local function draw_arg(arg)
-    if LoGetAircraftDrawArgumentValue then
-        local ok, value = pcall(LoGetAircraftDrawArgumentValue, arg)
-        if ok and type(value) == 'number' then return value end
+local function cockpit_arg(arg)
+    -- LoGetAircraftDrawArgumentValue() reads the external 3D model, not
+    -- clickable cockpit controls. Device 0 owns cockpit animation arguments.
+    if GetDevice then
+        local ok_dev, dev = pcall(GetDevice, 0)
+        if ok_dev and dev and dev.get_argument_value then
+            local ok_value, value = pcall(function() return dev:get_argument_value(arg) end)
+            if ok_value and type(value) == 'number' then return value end
+        end
     end
     return nil
 end
@@ -81,7 +89,29 @@ local function pick_number(t, names)
     return nil
 end
 
-local function get_weight_lbs()
+local function get_cockpit_params()
+    if not list_cockpit_params then return nil end
+    local ok, params = pcall(list_cockpit_params)
+    if ok and type(params) == 'string' then return params end
+    return nil
+end
+
+local function cockpit_param_number(params, name)
+    if type(params) ~= 'string' then return nil end
+    local prefix = name .. ':'
+    for line in string.gmatch(params, '[^\r\n]+') do
+        if string.sub(line, 1, #prefix) == prefix then
+            return tonumber(string.sub(line, #prefix + 1))
+        end
+    end
+    return nil
+end
+
+local function get_weight_lbs(params)
+    local mass_lb = cockpit_param_number(params, 'ExternalFM:HumanInfo:mass_lb')
+    if mass_lb then return mass_lb end
+    local mass_kg = cockpit_param_number(params, 'ExternalFM:HumanInfo:mass')
+    if mass_kg then return mass_kg * 2.20462262 end
     local self_data = LoGetSelfData and LoGetSelfData() or nil
     local w = pick_number(self_data, {'Weight', 'weight', 'GrossWeight', 'gross_weight', 'Mass', 'mass'})
     if w then
@@ -91,7 +121,12 @@ local function get_weight_lbs()
     return nil
 end
 
-local function get_trim_deg()
+local function get_trim_deg(params)
+    -- Live F/A-18C probing confirms Lstab changes by about -2 degrees per
+    -- second of nose-up trim and returns in the opposite direction. Convert
+    -- its negative nose-up convention to the positive degrees used by Python.
+    local left_stab = cockpit_param_number(params, 'ExternalFM:HumanInfo:Lstab')
+    if left_stab then return -left_stab end
     local mech = LoGetMechInfo and LoGetMechInfo() or nil
     local raw = pick_number(mech, {
         'stab_trim_deg', 'stabilator_trim_deg', 'elevator_trim_deg', 'pitch_trim_deg',
@@ -101,44 +136,59 @@ local function get_trim_deg()
         if raw >= -1.2 and raw <= 1.2 then return raw * 20.0 end
         return raw
     end
-    if LoGetAircraftDrawArgumentValue then
-        for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
-            local v = draw_arg(arg)
-            if type(v) == 'number' and math.abs(v) > 0.001 then
-                return v * 20.0
-            end
-        end
-    end
+    -- Do not infer trim from arbitrary external-model arguments. A missing
+    -- verified sensor must remain nil so Python holds at CAT TRIM DATA?.
     return nil
 end
 
 local function append_probe_args(parts)
     -- DCS-BIOS source-confirmed key arguments:
     -- 511 = EJECTION_SEAT_ARMED, 248 = ECM_MODE_SW, 276/267 = RWR lights.
-    table.insert(parts, json_number('seat_armed_arg_511', draw_arg(511)))
-    table.insert(parts, json_number('ecm_mode_arg_248', draw_arg(248)))
-    table.insert(parts, json_number('rwr_power_light_arg_276', draw_arg(276)))
-    table.insert(parts, json_number('rwr_enable_light_arg_267', draw_arg(267)))
-    table.insert(parts, json_number('fcs_reset_arg_349', draw_arg(349)))
-    table.insert(parts, json_number('canopy_sw_arg_453', draw_arg(453)))
+    table.insert(parts, json_number('seat_armed_arg_511', cockpit_arg(511)))
+    table.insert(parts, json_number('ecm_mode_arg_248', cockpit_arg(248)))
+    table.insert(parts, json_number('rwr_power_light_arg_276', cockpit_arg(276)))
+    table.insert(parts, json_number('rwr_enable_light_arg_267', cockpit_arg(267)))
+    table.insert(parts, json_number('fcs_reset_arg_349', cockpit_arg(349)))
+    table.insert(parts, json_number('canopy_sw_arg_453', cockpit_arg(453)))
+    table.insert(parts, json_number('apu_arg_375', cockpit_arg(375)))
+    table.insert(parts, json_number('rwr_power_arg_277', cockpit_arg(277)))
+    table.insert(parts, json_number('obogs_arg_365', cockpit_arg(365)))
+    table.insert(parts, json_number('radar_arg_440', cockpit_arg(440)))
+    table.insert(parts, json_number('ins_arg_443', cockpit_arg(443)))
+    table.insert(parts, json_number('hmd_brt_arg_136', cockpit_arg(136)))
     -- Candidate stabilator / trim draw args. probe_hornet_bridge.py will show which one moves.
     for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
-        table.insert(parts, json_number('trim_arg_' .. tostring(arg), draw_arg(arg)))
+        table.insert(parts, json_number('trim_arg_' .. tostring(arg), cockpit_arg(arg)))
     end
 end
 
+local function append_scan_args(parts)
+    if UFC_CVTRIM.scan_from == nil or UFC_CVTRIM.scan_to == nil then return end
+    local values = {}
+    for arg = UFC_CVTRIM.scan_from, UFC_CVTRIM.scan_to do
+        local value = cockpit_arg(arg)
+        if type(value) == 'number' then
+            table.insert(values, string.format('"%d":%.6f', arg, value))
+        end
+    end
+    table.insert(parts, '"scan_args":{' .. table.concat(values, ',') .. '}')
+end
+
 local function send_telemetry()
-    local weight = get_weight_lbs()
-    local trim = get_trim_deg()
+    local params = get_cockpit_params()
+    local weight = get_weight_lbs(params)
+    local trim = get_trim_deg(params)
     local parts = {
         '"type":"cv_trim"',
         json_string_value('bridge', 'loaded'),
         json_string_value('last_command', UFC_CVTRIM.last_command),
         json_number('time', now_time()),
         json_number('gross_weight_lbs', weight),
-        json_number('stab_trim_deg', trim)
+        json_number('stab_trim_deg', trim),
+        json_string_value('param_probe', UFC_CVTRIM.param_probe)
     }
     append_probe_args(parts)
+    append_scan_args(parts)
     tx:send('{' .. table.concat(parts, ',') .. '}')
 end
 
@@ -224,22 +274,85 @@ local function handle_trim(msg)
     local direction = json_string(msg, 'direction')
     if direction ~= 'up' and direction ~= 'down' then return end
     local pulse_ms = json_number_value(msg, 'pulse_ms') or 120
-    local cmd = command_constant(direction)
-    if type(cmd) ~= 'number' then return end
-    LoSetCommand(cmd, 1)
-    UFC_CVTRIM.last_command = 'trim pulse ' .. direction .. ' cmd=' .. tostring(cmd)
+    -- Local FA-18C command_defs.lua: HOTAS device 13, pitch trim up/down
+    -- commands 3014/3015. These are cockpit device commands, not global
+    -- LoSetCommand constants.
+    local cmd = direction == 'up' and 3014 or 3015
+    local dev = GetDevice and GetDevice(13) or nil
+    if not dev or not dev.performClickableAction then
+        UFC_CVTRIM.last_command = 'trim failed no HOTAS device'
+        log(UFC_CVTRIM.last_command)
+        return
+    end
+    dev:performClickableAction(cmd, 1.0)
+    UFC_CVTRIM.last_command = 'trim HOTAS pulse ' .. direction .. ' cmd=' .. tostring(cmd)
     log(UFC_CVTRIM.last_command)
     UFC_CVTRIM.pending_release = {
         time = now_time() + pulse_ms / 1000.0,
         type = 'trim',
         direction = direction,
         cmd = cmd,
+        device = dev,
     }
 end
 
 local function handle_ping(msg)
     UFC_CVTRIM.last_command = 'ping received'
     log('ping received')
+    send_telemetry()
+end
+
+local function handle_scan_args(msg)
+    local first = json_number_value(msg, 'from')
+    local last = json_number_value(msg, 'to')
+    if not first or not last then
+        UFC_CVTRIM.last_command = 'scan_args failed missing range'
+        log(UFC_CVTRIM.last_command)
+        return
+    end
+    first = math.floor(first)
+    last = math.floor(last)
+    if first < 0 or last > 2000 or first > last or last - first > 1000 then
+        UFC_CVTRIM.last_command = string.format('scan_args failed invalid range %s..%s', tostring(first), tostring(last))
+        log(UFC_CVTRIM.last_command)
+        return
+    end
+    UFC_CVTRIM.scan_from = first
+    UFC_CVTRIM.scan_to = last
+    UFC_CVTRIM.last_command = string.format('scan_args enabled %d..%d', first, last)
+    log(UFC_CVTRIM.last_command)
+    send_telemetry()
+end
+
+local function handle_dump_params(msg)
+    if not list_cockpit_params then
+        UFC_CVTRIM.param_probe = 'list_cockpit_params unavailable'
+        UFC_CVTRIM.last_command = 'dump_params unavailable'
+        log(UFC_CVTRIM.last_command)
+        return
+    end
+    local ok, params = pcall(list_cockpit_params)
+    if not ok or type(params) ~= 'string' then
+        UFC_CVTRIM.param_probe = 'list_cockpit_params failed: ' .. tostring(params)
+        UFC_CVTRIM.last_command = 'dump_params failed'
+        log(UFC_CVTRIM.param_probe)
+        return
+    end
+    local matches = {}
+    for line in string.gmatch(params, '[^\r\n]+') do
+        local lower = string.lower(line)
+        if string.find(lower, 'trim', 1, true)
+            or string.find(lower, 'stab', 1, true)
+            or string.find(lower, 'weight', 1, true)
+            or string.find(lower, 'mass', 1, true)
+            or string.find(lower, 'gross', 1, true)
+            or string.find(lower, 'fuel', 1, true) then
+            table.insert(matches, line)
+        end
+    end
+    UFC_CVTRIM.param_probe = table.concat(matches, ' | ')
+    UFC_CVTRIM.last_command = 'dump_params matches=' .. tostring(#matches)
+    log(UFC_CVTRIM.last_command .. ' ' .. UFC_CVTRIM.param_probe)
     send_telemetry()
 end
 
@@ -251,6 +364,10 @@ local function handle_command(msg)
         handle_trim(msg)
     elseif typ == 'ping' then
         handle_ping(msg)
+    elseif typ == 'scan_args' then
+        handle_scan_args(msg)
+    elseif typ == 'dump_params' then
+        handle_dump_params(msg)
     else
         log('unknown command: ' .. tostring(msg))
     end
@@ -273,14 +390,8 @@ local function release_pending()
         UFC_CVTRIM.last_command = string.format('clickable release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value))
         log(UFC_CVTRIM.last_command)
     elseif p.type == 'trim' then
-        local stop_cmd = command_stop_constant(p.direction)
-        if type(stop_cmd) == 'number' then
-            LoSetCommand(stop_cmd, 1)
-            UFC_CVTRIM.last_command = 'trim stop ' .. p.direction .. ' stop_cmd=' .. tostring(stop_cmd)
-        else
-            LoSetCommand(p.cmd, 0)
-            UFC_CVTRIM.last_command = 'trim release ' .. p.direction .. ' cmd=' .. tostring(p.cmd)
-        end
+        p.device:performClickableAction(p.cmd, 0.0)
+        UFC_CVTRIM.last_command = 'trim HOTAS release ' .. p.direction .. ' cmd=' .. tostring(p.cmd)
         log(UFC_CVTRIM.last_command)
     end
     UFC_CVTRIM.pending_release = nil

@@ -130,16 +130,16 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             ("LEFT CRANK", "send", "left_engine_crank", "Auto command."),
             ("LEFT IDLE", "user", "", "Set left throttle IDLE, then START."),
             ("LEFT STABLE?", "flag_left", "", "Confirm left engine stable."),
-            ("APU OFF", "apu_off", "apu_off", "Auto command."),
+            ("APU OFF / FLAPS HALF", "apu_off", "apu_off_flaps_half", "Stop APU and set FLAP switch to HALF."),
             ("BRIGHTNESS", "display_brightness", "", "Apply selected DAY/NIGHT preset."),
-            ("CANOPY CLOSE", "supervised", "canopy_close", "Program executes; monitor cockpit."),
+            ("CANOPY / OXYGEN", "supervised", "canopy_oxygen", "Close canopy and set OBOGS ON."),
             ("BLEED AIR", "supervised", "bleed_air_cycle", "Program executes; monitor cockpit."),
             ("TRIM RESET", "supervised", "trim_reset", "Program executes; monitor cockpit."),
             ("FCS / RWR", "supervised", "fcs_reset_rwr_power", "Reset FCS and press ALR-67 POWER."),
             ("ECM REC", "supervised", "ecm_receive", "Program executes; monitor cockpit."),
             ("MANUAL SETUP", "user", "", "Set standby attitude, radar altitude minimum, and bingo fuel; then START."),
             ("LOCAL ICP", "unlock", "", "Verify LOCAL ICP ready."),
-            ("INS", "ins", "", "Set selected LAND/CV profile."),
+            ("RADAR / INS", "ins_radar_setup", "", "RADAR OPR; set LAND/CV INS, wait 10s, press AMPCD PB19; then confirm."),
         ]
         if str(getattr(self, "_cold_profile", "land") or "land").lower() == "carrier":
             steps.append((
@@ -148,6 +148,12 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
                 "",
                 "Set nose-up trim by weight: <=44000lb 16 deg; 45000-48000lb 17 deg; >=49000lb 19 deg. Then START.",
             ))
+        steps.append((
+            "HMD CAL / IFA",
+            "hmd_calibrate",
+            "",
+            "Power HMD, set INS IFA, press RDDI OSB18/18/3/20 in order with 3s intervals, calibrate manually, then START.",
+        ))
         steps.append(("COMPLETE", "complete", "", "Done. Press COMPLETE to enter LOCAL ICP."))
         return steps
 

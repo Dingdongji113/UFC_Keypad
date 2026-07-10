@@ -63,6 +63,7 @@ DEFAULT_CONTROLS = {
     "right_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 2},
     "left_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 0},
     "apu_off": {"id": "APU_CONTROL_SW", "value": 0},
+    "flaps_half": {"id": "FLAP_SW", "value": 1},
     "canopy_close": {
         "sequence": [
             {"id": "CANOPY_SW", "value": 2, "delay_ms": 6000},
@@ -94,6 +95,15 @@ DEFAULT_CONTROLS = {
     "ecm_receive": {"id": "ECM_MODE_SW", "value": 1},
     "ins_land": {"id": "INS_SW", "value": 2},
     "ins_carrier": {"id": "INS_SW", "value": 1},
+    "ins_ifa": {"id": "INS_SW", "value": 4},
+    "oxygen_on": {"id": "OBOGS_SW", "value": 1},
+    "radar_opr": {"id": "RADAR_SW", "value": 2},
+    "ampcd_pb19": {"id": "AMPCD_PB_19", "value": 1},
+    "right_ddi_pb18": {"id": "RIGHT_DDI_PB_18", "value": 1},
+    "right_ddi_pb03": {"id": "RIGHT_DDI_PB_03", "value": 1},
+    "right_ddi_pb20": {"id": "RIGHT_DDI_PB_20", "value": 1},
+    "hmd_day": {"id": "HMD_OFF_BRT", "value": 65535},
+    "hmd_night": {"id": "HMD_OFF_BRT", "value": 30583},
     "display_lddi_select": {"id": "LEFT_DDI_BRT_SELECT", "day_value": 2, "night_value": 1},
     "display_rddi_select": {"id": "RIGHT_DDI_BRT_SELECT", "day_value": 2, "night_value": 1},
     "display_ampcd_select": {"id": "", "day_value": 1, "night_value": 0},

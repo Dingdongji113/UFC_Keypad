@@ -29,6 +29,43 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## DCS Export bridge 诊断
+
+弹射座椅保险、ECM REC 和 CV 弹射配平依赖额外的 Export.lua bridge。安装或更新 bridge：
+
+```bash
+python install_dcs_export_bridge.py
+```
+
+完全重启 DCS、进入 F/A-18C 座舱并退出主 UFC 程序后，运行诊断：
+
+```bash
+python probe_hornet_bridge.py
+```
+
+诊断程序默认扫描 draw argument `0..800`，逐项测试弹射座椅、ECM 和俯仰配平，并在当前目录生成可直接反馈的文件：
+
+```text
+probe_report_YYYYMMDD_HHMMSS.md
+probe_report_YYYYMMDD_HHMMSS.json
+```
+
+无人值守运行可增加 `--yes`；扫描其他范围可使用 `--scan-from` / `--scan-to`。一次最多扫描 1001 个参数，范围限制为 `0..2000`。
+
+DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显示没有 telemetry，先检查该日志是否存在，并确认没有其他程序占用 UDP 5518。
+
+## 当前冷启动清单
+
+- LAND：23 步。
+- CV：24 步，其中第 22 步为自动 CAT TRIM。
+- 第 14 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
+- APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
+- 第 17 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
+- 第 12 步 `APU OFF / FLAPS HALF`：关闭 APU，并将襟翼开关置于 HALF。
+- 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，等待约 10 秒后按 AMPCD PB19，随后等待人工确认。
+- LAND 第 22 步、CV 第 23 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA，等待用户手动校准确认。
+- HMD 打开后严格按 `RDDI OSB18 → OSB18 → OSB3 → OSB20` 执行，每次按键完成后等待 3 秒。
+
 ## 启动动画设置
 
 在设置面板中可选择启动动画风格。切换后会立即替换当前启动覆盖层，并保存到 `ufc_config.json` 作为下次启动默认值：

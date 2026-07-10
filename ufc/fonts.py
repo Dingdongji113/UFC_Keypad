@@ -48,7 +48,7 @@ def _load_hornet_font():
                 return HORNET_UFC_FAMILY
     
     # 3) 全部失败，回退 B612
-    print("[字体] ⚠️ Hornet UFC 字体未找到，回退到 B612")
+    print("[字体] Hornet UFC 字体未找到，回退到 B612")
     HORNET_UFC_FAMILY = None
     return None
 
@@ -102,4 +102,3 @@ BUTTON_TEXTS = {
     (5, 9): "<",
     (5, 10): ">",
 }
-

@@ -31,6 +31,8 @@ TRIM_TOLERANCE_DEG = 0.25
 TRIM_PULSE_MS = 120
 TRIM_RECHECK_MS = 260
 TRIM_MAX_PULSES = 90
+INS_TO_AMPCD_DELAY_MS = 10000
+RDDI_OSB_INTERVAL_MS = 3000
 
 
 @dataclass
@@ -339,6 +341,75 @@ def install_cv_trim_automation(UFCKeypadWindowClass) -> None:
                 "ins_carrier" if self._cold_profile == "carrier" else "ins_land",
                 advance_if_running,
             )
+        elif kind == "ins_radar_setup":
+            self._cold_exec_phase = "AUTO"
+            self._cold_step_detail = "Setting RADAR OPR and selected INS alignment position."
+            self._cold_refresh_ui()
+
+            def after_pb19():
+                self._cold_state = "wait_user"
+                self._cold_exec_phase = "USER"
+                self._cold_last_action = "RADAR / INS CONFIRM"
+                self._cold_step_detail = "RADAR OPR and AMPCD PB19 sent. Verify alignment page, then START."
+                self._cold_refresh_ui()
+
+            def press_pb19():
+                self._cold_last_action = "AMPCD PB19"
+                self._cold_step_detail = "Ten seconds elapsed; pressing AMPCD PB19."
+                self._cold_refresh_ui()
+                self._cold_send_configured_async("ampcd_pb19", after_pb19)
+
+            def after_ins():
+                self._cold_last_action = "INS WAIT 10S"
+                self._cold_step_detail = "Waiting 10 seconds before AMPCD PB19."
+                self._cold_refresh_ui()
+                QTimer.singleShot(INS_TO_AMPCD_DELAY_MS, press_pb19)
+
+            def after_radar():
+                self._cold_send_configured_async(
+                    "ins_carrier" if self._cold_profile == "carrier" else "ins_land",
+                    after_ins,
+                )
+
+            self._cold_send_configured_async("radar_opr", after_radar)
+        elif kind == "hmd_calibrate":
+            self._cold_exec_phase = "AUTO"
+            self._cold_step_detail = "Powering HMD and setting INS IFA."
+            self._cold_refresh_ui()
+
+            def wait_for_hmd_calibration():
+                self._cold_state = "wait_user"
+                self._cold_exec_phase = "USER"
+                self._cold_last_action = "HMD CALIBRATE"
+                self._cold_step_detail = "Calibrate HMD manually, then press START. INS is set to IFA."
+                self._cold_refresh_ui()
+
+            osb_sequence = [
+                ("right_ddi_pb18", "RDDI OSB18 1/2"),
+                ("right_ddi_pb18", "RDDI OSB18 2/2"),
+                ("right_ddi_pb03", "RDDI OSB3"),
+                ("right_ddi_pb20", "RDDI OSB20"),
+            ]
+
+            def press_osb(index: int):
+                if index >= len(osb_sequence):
+                    wait_for_hmd_calibration()
+                    return
+                key, label = osb_sequence[index]
+                self._cold_last_action = label
+                self._cold_step_detail = f"Pressing {label}; next command in 3 seconds."
+                self._cold_refresh_ui()
+
+                def after_press():
+                    QTimer.singleShot(RDDI_OSB_INTERVAL_MS, lambda: press_osb(index + 1))
+
+                self._cold_send_configured_async(key, after_press)
+
+            def set_ifa():
+                self._cold_send_configured_async("ins_ifa", lambda: press_osb(0))
+
+            hmd_key = "hmd_night" if str(getattr(self, "_cold_display_mode", "day")).lower() == "night" else "hmd_day"
+            self._cold_send_configured_async(hmd_key, set_ifa)
         elif kind == "complete":
             self._cold_state = "complete"
             self._cold_exec_phase = "DONE"

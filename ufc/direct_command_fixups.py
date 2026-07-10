@@ -25,32 +25,136 @@ def install_direct_command_fixups(UFCKeypadWindowClass) -> None:
     previous_entries_from_config = UFCKeypadWindowClass._cold_entries_from_config
 
     def _cold_entries_from_config(self, key: str) -> List[Dict[str, Any]]:
+        if key == "apu_start":
+            return [
+                {"id": "APU_CONTROL_SW", "value": 1, "delay_ms": 100},
+                {
+                    # Local command_defs.lua: APU_ControlSw_TM_WARTHOG=3023.
+                    # Unlike cockpit command 3001, this latching input command
+                    # was verified live to hold argument 375 at 1.0.
+                    "bridge": "clickable", "device": 12, "command": 3023,
+                    "value": 1.0, "label": "APU LATCH ON", "delay_ms": 350,
+                },
+            ]
+        if key == "apu_off":
+            return [
+                {"id": "APU_CONTROL_SW", "value": 0, "delay_ms": 100},
+                {
+                    "bridge": "clickable", "device": 12, "command": 3023,
+                    "value": 0.0, "label": "APU LATCH OFF", "delay_ms": 350,
+                },
+            ]
+        if key == "apu_off_flaps_half":
+            return [
+                {"id": "APU_CONTROL_SW", "value": 0, "delay_ms": 100},
+                {
+                    "bridge": "clickable", "device": 12, "command": 3023,
+                    "value": 0.0, "label": "APU LATCH OFF", "delay_ms": 350,
+                },
+                {"id": "FLAP_SW", "value": 1, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 2, "command": 3007,
+                    "value": 0.0, "label": "FLAPS HALF", "delay_ms": 350,
+                },
+            ]
         if key == "ejection_seat_arm":
             return [
                 # DCS-BIOS path, still useful if it works on the local install.
-                {"id": "EJECTION_SEAT_ARMED", "value": 1, "delay_ms": 150},
+                {"id": "EJECTION_SEAT_ARMED", "value": 0, "delay_ms": 150},
                 # Direct clickable fallback: device 7, command 3006 from DCS-BIOS source.
                 {
                     "bridge": "clickable",
                     "device": 7,
                     "command": 3006,
-                    "value": 1.0,
+                    "value": 0.0,
                     "label": "EJECTION SEAT ARMED",
                     "delay_ms": 350,
                 },
             ]
         if key == "ecm_receive":
             return [
-                # DCS-BIOS REC position from source positions XMIT / REC / BIT / STBY / OFF.
-                {"id": "ECM_MODE_SW", "value": 1, "delay_ms": 150},
-                # Direct clickable fallback: defineTumb range {0,0.4}; REC is 0.1.
+                # Local DCS input mapping confirms REC is cockpit value 0.3.
+                {"id": "ECM_MODE_SW", "value": 3, "delay_ms": 150},
+                # Direct clickable fallback: local input default.lua maps REC to 0.3.
                 {
                     "bridge": "clickable",
                     "device": 66,
                     "command": 3001,
-                    "value": 0.1,
+                    "value": 0.3,
                     "label": "ECM REC",
                     "delay_ms": 350,
+                },
+            ]
+        if key == "fcs_reset_rwr_power":
+            return [
+                {"id": "FCS_RESET_BTN", "value": 1, "delay_ms": 80},
+                {"id": "FCS_RESET_BTN", "value": 0, "delay_ms": 120},
+                # The ALR-67 POWER control is latching. Sending a release/0
+                # immediately after 1 turns it back off on this DCS build.
+                {"id": "RWR_POWER_BTN", "value": 1, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 53, "command": 3001,
+                    "value": 1.0, "label": "RWR POWER ON", "delay_ms": 350,
+                },
+            ]
+        if key == "canopy_oxygen":
+            return previous_entries_from_config(self, "canopy_close") + [
+                {"id": "OBOGS_SW", "value": 1, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 10, "command": 3001,
+                    "value": 1.0, "label": "OBOGS ON", "delay_ms": 350,
+                },
+            ]
+        if key == "radar_opr":
+            return [
+                {"id": "RADAR_SW", "value": 2, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 42, "command": 3001,
+                    "value": 0.2, "label": "RADAR OPR", "delay_ms": 350,
+                },
+            ]
+        if key in ("ins_land", "ins_carrier", "ins_ifa"):
+            state = {"ins_land": 2, "ins_carrier": 1, "ins_ifa": 4}[key]
+            value = state / 10.0
+            return [
+                {"id": "INS_SW", "value": state, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 44, "command": 3001,
+                    "value": value, "label": key.upper(), "delay_ms": 350,
+                },
+            ]
+        if key == "ampcd_pb19":
+            return [
+                {"id": "AMPCD_PB_19", "value": 1, "delay_ms": 120},
+                {"id": "AMPCD_PB_19", "value": 0, "delay_ms": 120},
+                {
+                    "bridge": "clickable", "device": 37, "command": 3029,
+                    "value": 1.0, "hold_ms": 120, "release_value": 0.0,
+                    "label": "AMPCD PB19", "delay_ms": 350,
+                },
+            ]
+        if key in ("right_ddi_pb18", "right_ddi_pb03", "right_ddi_pb20"):
+            number = {"right_ddi_pb18": 18, "right_ddi_pb03": 3, "right_ddi_pb20": 20}[key]
+            command = {18: 3028, 3: 3013, 20: 3030}[number]
+            ident = f"RIGHT_DDI_PB_{number:02d}"
+            return [
+                {"id": ident, "value": 1, "delay_ms": 120},
+                {"id": ident, "value": 0, "delay_ms": 120},
+                {
+                    "bridge": "clickable", "device": 36, "command": command,
+                    "value": 1.0, "hold_ms": 120, "release_value": 0.0,
+                    "label": f"RDDI OSB{number}", "delay_ms": 350,
+                },
+            ]
+        if key in ("hmd_day", "hmd_night"):
+            is_day = key == "hmd_day"
+            bios_value = 65535 if is_day else 30583
+            direct_value = 0.75 if is_day else 0.35
+            return [
+                {"id": "HMD_OFF_BRT", "value": bios_value, "delay_ms": 150},
+                {
+                    "bridge": "clickable", "device": 58, "command": 3001,
+                    "value": direct_value, "label": key.upper(), "delay_ms": 350,
                 },
             ]
         return previous_entries_from_config(self, key)

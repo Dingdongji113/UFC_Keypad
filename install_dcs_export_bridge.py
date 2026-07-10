@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Install UFC_Keypad's DCS Export.lua bridge.
+r"""Install UFC_Keypad's DCS Export.lua bridge.
 
 This script copies dcs_export/UFC_Keypad_CVTrim.lua into every detected
 Saved Games\DCS*\Scripts directory and appends the required dofile(...) line to
