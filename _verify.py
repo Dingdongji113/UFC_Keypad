@@ -134,7 +134,10 @@ w._cold_profile = "land"
 land = w._cold_step_list()
 land_names = [step[0] for step in land]
 assert len(land) == 28
-assert land_names[11:14] == ["LIGHTS / ANTI-SKID", "CONTROL CHECK", "APU OFF / FLAPS AUTO"]
+assert land_names[11:18] == [
+    "LIGHTS / ANTI-SKID", "APU OFF / FLAPS AUTO", "BRIGHTNESS",
+    "CANOPY / OXYGEN", "BLEED AIR", "CONTROL CHECK", "TRIM RESET",
+]
 assert land_names[19:25] == [
     "ECM REC", "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
 ]

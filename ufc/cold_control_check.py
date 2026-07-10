@@ -81,7 +81,7 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
         inserted = False
         for step in previous_step_list(self):
             steps.append(step)
-            if step[0] == "LIGHTS / ANTI-SKID":
+            if step[0] == "BLEED AIR":
                 steps.append((
                     "CONTROL CHECK",
                     "control_check",
@@ -90,7 +90,7 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
                 ))
                 inserted = True
         if not inserted:
-            raise RuntimeError("LIGHTS / ANTI-SKID step not found for CONTROL CHECK insertion")
+            raise RuntimeError("BLEED AIR step not found for CONTROL CHECK insertion")
         return steps
 
     def _control_step_is_current(self) -> bool:
