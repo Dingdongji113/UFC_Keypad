@@ -56,15 +56,18 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 
 ## 当前冷启动清单
 
-- LAND：24 步。
-- CV：25 步，其中第 23 步为自动 CAT TRIM。
+- LAND：26 步。
+- CV：27 步，其中第 25 步为自动 CAT TRIM。
 - 第 14 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
 - APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
 - 第 17 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
 - 第 12 步 `APU OFF / FLAPS HALF`：关闭 APU，并将襟翼开关置于 HALF。
-- 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
-- 第 22 步 `AMPCD PB19`：按下并释放 AMPCD PB19，随后再次等待人工确认；与第 21 步之间不再使用固定 10 秒延时。
-- LAND 第 23 步、CV 第 24 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
+- 第 19 步 `SAI UNLOCK`：程序使用专用 CCW 输入旋转解锁备用姿态仪，不调整小飞机标线，等待用户确认。
+- 第 20 步 `RADALT MIN`：通过屏幕触控 −/+ 以 20 ft 为一档选择目标；按 START 后程序给雷达高度仪通电并闭环设置，完成后再次等待确认。
+- 第 21 步 `BINGO FUEL`：通过屏幕触控 −/+ 以 100 lb 为一档选择目标；按 START 后闭环设置，完成后再次等待确认。
+- 第 23 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
+- 第 24 步 `AMPCD PB19`：仅通过 DCS-BIOS 按下并释放一次 PB19，随后等待人工确认；不再同时发送 Export bridge，避免双击。
+- LAND 第 25 步、CV 第 26 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
 - HMD 打开后严格按 `RDDI OSB18 → OSB18 → OSB3 → OSB20` 执行，每次按键完成后等待 3 秒。
 
 ## 启动动画设置
@@ -115,3 +118,17 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 - Python 3.10+
 - PyQt6
 - Windows (原生触控钩子仅 Windows 有效)
+
+## Steps 19–21 touch setup
+
+The former MANUAL SETUP step is split into three user-confirmed steps. SAI uses
+the local input-only `SAI_Rotate_EXT` command through the Export bridge's
+`SetCommand` path. RADALT and BINGO use large on-screen touch controls instead
+of keyboard input. RADALT changes by 20 ft per tap; BINGO changes by 100 lb per
+tap. Press START once to apply the displayed value and again after cockpit
+verification to continue.
+
+Suggested initial values remain configurable in `ufc_config.json` under
+`manual_setup_targets`: LAND defaults to 200 ft / 3000 lb and CV defaults to
+200 ft / 4000 lb. RADALT argument 287 is converted through the local cockpit
+gauge curves. Missing feedback or pulse-limit failure enters manual takeover.

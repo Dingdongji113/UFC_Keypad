@@ -112,6 +112,7 @@ def main():
         from ufc.direct_command_fixups import install_direct_command_fixups
         from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
         from ufc.radar_ins_steps import install_radar_ins_step_split
+        from ufc.manual_setup_auto import install_manual_setup_automation
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
@@ -121,6 +122,7 @@ def main():
         install_direct_command_fixups(UFCKeypadWindow)
         install_hmd_osb_timing_fix(UFCKeypadWindow)
         install_radar_ins_step_split(UFCKeypadWindow)
+        install_manual_setup_automation(UFCKeypadWindow)
 
         app = QApplication(sys.argv)
         app.setStyle("Fusion")

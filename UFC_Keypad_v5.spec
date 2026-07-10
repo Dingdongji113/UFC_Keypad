@@ -37,6 +37,7 @@ a = Analysis(
         'ufc.direct_command_fixups',
         'ufc.hmd_osb_timing',
         'ufc.radar_ins_steps',
+        'ufc.manual_setup_auto',
         'ufc.ui',
     ],
     hookspath=[],

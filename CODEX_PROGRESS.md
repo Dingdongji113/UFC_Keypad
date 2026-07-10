@@ -15,8 +15,8 @@
 - A three-second hold on cockpit command 3001 was proven ineffective. The live-verified fix uses device 12 command 3023 (`APU_ControlSw_TM_WARTHOG`): value 1 latched argument 375 at 1.0 and value 0 released it.
 - Corrected ALR-67 POWER as a latching control: it is now set to 1 without an immediate release, with direct device 53/command 3001 fallback; live argument 277 latched at 1 and power light 276 illuminated.
 - Step 14 now closes the canopy and enables OBOGS.
-- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 21 sets RADAR OPR plus LAND/CV INS and waits for START; step 22 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
-- HMD calibration/INS IFA is now LAND step 23 and CV step 24, using DAY/NIGHT-dependent HMD brightness.
+- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 23 sets RADAR OPR plus LAND/CV INS and waits for START; step 24 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
+- HMD calibration/INS IFA is now LAND step 25 and CV step 26, using DAY/NIGHT-dependent HMD brightness.
 - Step 12 now combines APU OFF with FLAPS HALF.
 - HMD setup sets INS IFA, waits ten seconds, then presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order with three seconds between completed presses.
 - Each HMD RDDI OSB uses one 200 ms DCS-BIOS press/release. Export bridge is fallback-only and is never sent simultaneously, preventing accidental double presses.
@@ -46,3 +46,35 @@
 5. Return both generated `probe_report_*.md` and `probe_report_*.json` files.
 
 The resulting evidence is required before changing the hard-coded ejection-seat, ECM, or trim command values.
+
+## Step 19 closed-loop automation
+
+- Added `ufc/manual_setup_auto.py` with guarded SAI, RADALT, and BINGO stages.
+- Confirmed local mappings: SAI device 32/command 3002/arguments 213 and 209;
+  RADALT device 30/command 3002/arguments 291 and 287; IFEI UP/DOWN device 33,
+  commands 3003/3004, with `IFEI_BINGO` string feedback.
+- Live probing confirmed a BINGO press changes the displayed target by 100 lb.
+- Live probing confirmed RADALT is a relative rotary and `+1000`/`-1000`
+  DCS-BIOS values provide approximately ten-foot closed-loop resolution.
+- Added configurable LAND 200 ft / 3000 lb and CV 200 ft / 4000 lb defaults.
+- Extended DCS-BIOS parsing and bridge telemetry with stable feedback fields.
+  Failures enter `wait_user` with per-stage status.
+- Live LAND acceptance completed in the running aircraft: SAI was already
+  unlocked and correctly skipped; RADALT moved from about 447 ft to 208 ft in
+  50 fine pulses; BINGO moved from 100 lb to exactly 3000 lb in 29 presses.
+  Every primary action produced feedback, so the bridge was not invoked.
+
+## Follow-up: split touch setup and PB19 single press
+
+- Split former step 19 into `SAI UNLOCK`, `RADALT MIN`, and `BINGO FUEL`, each
+  with its own user confirmation.
+- Added large on-screen touch −/+ controls. RADALT selection is 20 ft per tap;
+  BINGO selection is 100 lb per tap. Suggested profile defaults remain loaded
+  from `manual_setup_targets`.
+- RADALT now checks the OFF flag and sends a positive power-on rotary action
+  before closed-loop regulation when required.
+- SAI now uses local input command `SAI_Rotate_EXT`: device 32, command 3005,
+  CCW value -0.3, through the bridge `SetCommand` path. It does not use the
+  normal SAI pitch-adjust rotary.
+- AMPCD PB19 now contains exactly one DCS-BIOS press/release pair. The former
+  unconditional bridge copy was removed to eliminate the observed double tap.

@@ -124,14 +124,12 @@ def install_direct_command_fixups(UFCKeypadWindowClass) -> None:
                 },
             ]
         if key == "ampcd_pb19":
+            # PB19 has no reliable page-state feedback for safe fallback
+            # arbitration. Sending DCS-BIOS and the bridge back-to-back causes
+            # a real double press, so this step deliberately uses one channel.
             return [
                 {"id": "AMPCD_PB_19", "value": 1, "delay_ms": 120},
                 {"id": "AMPCD_PB_19", "value": 0, "delay_ms": 120},
-                {
-                    "bridge": "clickable", "device": 37, "command": 3029,
-                    "value": 1.0, "hold_ms": 120, "release_value": 0.0,
-                    "label": "AMPCD PB19", "delay_ms": 350,
-                },
             ]
         if key in ("right_ddi_pb18", "right_ddi_pb03", "right_ddi_pb20"):
             number = {"right_ddi_pb18": 18, "right_ddi_pb03": 3, "right_ddi_pb20": 20}[key]
