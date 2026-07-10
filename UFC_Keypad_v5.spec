@@ -38,6 +38,7 @@ a = Analysis(
         'ufc.hmd_osb_timing',
         'ufc.radar_ins_steps',
         'ufc.manual_setup_auto',
+        'ufc.cold_lighting_auto',
         'ufc.ui',
     ],
     hookspath=[],

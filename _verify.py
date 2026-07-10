@@ -20,7 +20,7 @@ modules = [
     "ufc/ifei_rpm.py", "ufc/realtime_rpm.py", "ufc/cold_start.py",
     "ufc/cold_direct_entry.py", "ufc/cold_setup_split.py", "ufc/cold_ui_fixups.py",
     "ufc/cv_trim_auto.py", "ufc/direct_command_fixups.py", "ufc/hmd_osb_timing.py",
-    "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/ui.py",
+    "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/cold_lighting_auto.py", "ufc/ui.py",
 ]
 for path in modules:
     py_compile.compile(path, doraise=True)
@@ -29,7 +29,7 @@ for name in [
     "input", "widgets", "startup", "windowing", "ifei_rpm", "realtime_rpm",
     "cold_start", "cold_direct_entry", "cold_setup_split", "cold_ui_fixups",
     "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing", "radar_ins_steps",
-    "manual_setup_auto", "ui",
+    "manual_setup_auto", "cold_lighting_auto", "ui",
 ]:
     importlib.import_module("ufc." + name)
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
@@ -48,9 +48,11 @@ from ufc.direct_command_fixups import install_direct_command_fixups
 from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
 from ufc.radar_ins_steps import install_radar_ins_step_split
 from ufc.manual_setup_auto import install_manual_setup_automation
+from ufc.cold_lighting_auto import install_cold_lighting_automation
 import ufc.cv_trim_auto as CVA
 import ufc.dcs_bios as DB
 import ufc.manual_setup_auto as MSA
+import ufc.cold_lighting_auto as CLA
 import ufc.ui as UI
 
 
@@ -72,6 +74,7 @@ install_direct_command_fixups(UFCKeypadWindow)
 install_hmd_osb_timing_fix(UFCKeypadWindow)
 install_radar_ins_step_split(UFCKeypadWindow)
 install_manual_setup_automation(UFCKeypadWindow)
+install_cold_lighting_automation(UFCKeypadWindow)
 CVA._RECEIVER.start = cv_receiver_start
 
 # Do not attach hooks or UDP listeners to a concurrently running DCS session.
@@ -97,24 +100,79 @@ assert rx.parser.analog_addresses[0x751C] == "radalt_off_flag"
 w._cold_profile = "land"
 land = w._cold_step_list()
 land_names = [step[0] for step in land]
-assert len(land) == 26
-assert land_names[11] == "APU OFF / FLAPS AUTO"
-assert land_names[17:23] == [
+assert len(land) == 27
+assert land_names[11:13] == ["LIGHTS / ANTI-SKID", "APU OFF / FLAPS AUTO"]
+assert land_names[18:24] == [
     "ECM REC", "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
 ]
-assert land_names[23:] == ["LOCAL ICP", "HMD CAL / IFA", "COMPLETE"]
-assert [step[1] for step in land[18:23]] == [
+assert land_names[24:] == ["LOCAL ICP", "HMD CAL / IFA", "COMPLETE"]
+assert [step[1] for step in land[19:24]] == [
     "radar_ins_confirm", "ampcd_pb19_confirm", "manual_sai_unlock",
     "manual_radalt_direct", "manual_bingo_direct",
 ]
 w._cold_profile = "carrier"
 carrier_names = [step[0] for step in w._cold_step_list()]
-assert len(carrier_names) == 27
-assert carrier_names[18:27] == [
+assert len(carrier_names) == 28
+assert carrier_names[19:28] == [
     "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
     "LOCAL ICP", "CAT TRIM", "HMD CAL / IFA", "COMPLETE",
 ]
-print("[3] 26/27-STEP ORDER OK")
+print("[3] 27/28-STEP ORDER OK")
+
+# Post-engine lighting: external master is untouched and 70% uses BRT=100%.
+assert CLA.LIGHT_BRIGHTNESS_VALUE == 45875
+w._cold_profile = "land"
+day_land = w._cold_lighting_entries("day", "land")
+assert day_land == [
+    {"id": "STROBE_SW", "value": 0, "delay_ms": 120},
+    {"id": "ANTI_SKID_SW", "value": 1, "delay_ms": 120},
+]
+day_cv = w._cold_lighting_entries("day", "carrier")
+assert day_cv[-1]["id"] == "ANTI_SKID_SW" and day_cv[-1]["value"] == 0
+night = w._cold_lighting_entries("night", "land", flood_enabled=True, chart_enabled=False)
+night_values = {entry["id"]: entry["value"] for entry in night}
+assert night_values == {
+    "STROBE_SW": 0,
+    "LDG_TAXI_SW": 1,
+    "FORMATION_DIMMER": 45875,
+    "POSITION_DIMMER": 45875,
+    "CONSOLES_DIMMER": 45875,
+    "INST_PNL_DIMMER": 45875,
+    "WARN_CAUTION_DIMMER": 45875,
+    "COCKKPIT_LIGHT_MODE_SW": 1,
+    "FLOOD_DIMMER": 45875,
+    "CHART_DIMMER": 0,
+    "ANTI_SKID_SW": 1,
+}
+assert not any("MASTER" in entry["id"] for entry in day_land + night)
+
+# NIGHT asks FLOOD then CHART using the cold-page NO/YES touch controls.
+w._cold_display_mode = "night"
+w._cold_profile = "land"
+w._current_page = "cold_start"
+w._cold_entry_stage = "checklist"
+w._cold_state = "running"
+w._cold_sequence_token += 1
+w._cold_step_index = land_names.index("LIGHTS / ANTI-SKID")
+captured_lighting = []
+original_sequence_runner = w._cold_run_sequence_entries
+w._cold_run_sequence_entries = lambda _key, entries, _index, _token, _done: captured_lighting.extend(entries)
+try:
+    w._cold_run_next_step()
+    assert w._cold_state == "wait_user" and w._cold_lighting_phase == "ask_flood"
+    assert not w._cold_lighting_cells["yes"].isHidden()
+    assert w._cold_lighting_cells["question"]._var_text == "FLOOD LIGHT?"
+    w._cold_handle_click(CLA.P_LIGHT_YES)
+    assert w._cold_lighting_phase == "ask_chart"
+    old_index = w._cold_step_index
+    w._cold_arm_or_continue()
+    assert w._cold_step_index == old_index and w._cold_state == "wait_user"
+    w._cold_handle_click(CLA.P_LIGHT_NO)
+finally:
+    w._cold_run_sequence_entries = original_sequence_runner
+assert {entry["id"]: entry["value"] for entry in captured_lighting}["FLOOD_DIMMER"] == 45875
+assert {entry["id"]: entry["value"] for entry in captured_lighting}["CHART_DIMMER"] == 0
+print("[3a] POST-ENGINE LIGHTING / ANTI-SKID / PROMPTS OK")
 
 # FLAPS AUTO values and PB19's exactly-one-channel contract.
 flaps = w._cold_entries_from_config("apu_off_flaps_auto")

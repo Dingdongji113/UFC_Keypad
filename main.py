@@ -91,6 +91,7 @@ def main():
         from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
         from ufc.radar_ins_steps import install_radar_ins_step_split
         from ufc.manual_setup_auto import install_manual_setup_automation
+        from ufc.cold_lighting_auto import install_cold_lighting_automation
         install_ifei_rpm_fallback()
         install_realtime_rpm_callbacks()
         patch_settings_window_apply_screen(SettingsWindow)
@@ -103,6 +104,7 @@ def main():
         install_hmd_osb_timing_fix(UFCKeypadWindow)
         install_radar_ins_step_split(UFCKeypadWindow)
         install_manual_setup_automation(UFCKeypadWindow)
+        install_cold_lighting_automation(UFCKeypadWindow)
         _bootstrap_log("startup/ui/windowing/cold_start modules imported")
 
         _bootstrap_log("creating QApplication")

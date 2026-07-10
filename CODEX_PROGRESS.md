@@ -14,10 +14,11 @@
 - Corrected APU ON from invalid DCS-BIOS state 3 to state 1 and added direct device 12/command 3001 fallback; live argument 375 changed from 0 to 1.
 - A three-second hold on cockpit command 3001 was proven ineffective. The live-verified fix uses device 12 command 3023 (`APU_ControlSw_TM_WARTHOG`): value 1 latched argument 375 at 1.0 and value 0 released it.
 - Corrected ALR-67 POWER as a latching control: it is now set to 1 without an immediate release, with direct device 53/command 3001 fallback; live argument 277 latched at 1 and power light 276 illuminated.
-- Step 14 now closes the canopy and enables OBOGS.
-- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 19 sets RADAR OPR plus LAND/CV INS and waits for START; step 20 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
-- HMD calibration/INS IFA is now LAND step 25 and CV step 26, using DAY/NIGHT-dependent HMD brightness.
-- Step 12 now combines APU OFF with FLAPS AUTO using DCS-BIOS state 0 and local input value 1.0.
+- Step 15 now closes the canopy and enables OBOGS.
+- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 20 sets RADAR OPR plus LAND/CV INS and waits for START; step 21 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
+- HMD calibration/INS IFA is now LAND step 26 and CV step 27, using DAY/NIGHT-dependent HMD brightness.
+- Step 13 combines APU OFF with FLAPS AUTO using DCS-BIOS state 0 and local input value 1.0.
+- New step 12 runs after both engines are stable. DAY sets STROBE BRIGHT only; NIGHT additionally sets LDG/TAXI ON, formation/position and core interior dimmers to 70%, and cockpit mode NITE. It asks for FLOOD and CHART choices with matching UFC touch controls. The exterior master switch is untouched; anti-skid is ON for LAND and OFF for CV.
 - HMD setup sets INS IFA, waits ten seconds, then presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order with three seconds between completed presses.
 - Each HMD RDDI OSB uses one 200 ms DCS-BIOS press/release. Export bridge is fallback-only and is never sent simultaneously, preventing accidental double presses.
 
@@ -95,3 +96,20 @@ history. The direct-touch implementation below replaces its targets and loops.
   decrement restored one step after the increment. No bridge duplicate was sent.
 - Live bridge logging confirmed SAI `SetCommand` device 32/command 3005 at
   `-0.3`, followed by its timed release to `0` after 300 ms.
+
+## Post-engine lighting and anti-skid
+
+- Added `LIGHTS / ANTI-SKID` immediately after both engines are stable. LAND now
+  has 27 steps and CV has 28.
+- DAY sends only STROBE BRIGHT plus the profile anti-skid state, so it does not
+  switch on any interior lights. NIGHT sets LDG/TAXI ON, STROBE BRIGHT,
+  formation/position and console/instrument/warn-caution brightness to 70%, and
+  cockpit light mode to NITE.
+- NIGHT asks FLOOD and CHART independently with matching UFC-style NO/YES touch
+  controls. Enabled is 70%; disabled is 0. START cannot bypass either prompt.
+- The command list never contains an exterior master-light command. LAND sends
+  anti-skid ON and CV sends anti-skid OFF.
+- Live DCS acceptance applied the complete NIGHT/LAND sequence: every requested
+  switch state matched, and 45875 input values reported as 45874 due to cockpit
+  analog quantization (effectively 70%). The original cockpit lighting state was
+  restored exactly after the test.
