@@ -56,14 +56,15 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 
 ## 当前冷启动清单
 
-- LAND：23 步。
-- CV：24 步，其中第 22 步为自动 CAT TRIM。
+- LAND：24 步。
+- CV：25 步，其中第 23 步为自动 CAT TRIM。
 - 第 14 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
 - APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
 - 第 17 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
 - 第 12 步 `APU OFF / FLAPS HALF`：关闭 APU，并将襟翼开关置于 HALF。
-- 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，等待约 10 秒后按 AMPCD PB19，随后等待人工确认。
-- LAND 第 22 步、CV 第 23 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA，等待用户手动校准确认。
+- 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
+- 第 22 步 `AMPCD PB19`：按下并释放 AMPCD PB19，随后再次等待人工确认；与第 21 步之间不再使用固定 10 秒延时。
+- LAND 第 23 步、CV 第 24 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
 - HMD 打开后严格按 `RDDI OSB18 → OSB18 → OSB3 → OSB20` 执行，每次按键完成后等待 3 秒。
 
 ## 启动动画设置
