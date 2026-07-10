@@ -1,0 +1,62 @@
+name: Recover exact critical source files
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/recover-exact-critical-files.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Recover exact files staged from the uploaded archive commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            git show 845e8cd09b8279ad1823d819fd858f1753417e0e:.sync_latest/cv_trim_auto.py.b64.00
+            git show 6d347ae75628cfbbabf4af991821cc65b6eb1e4f:.sync_latest/cv_trim_auto.py.b64.01
+          } | base64 -d > ufc/cv_trim_auto.py
+
+          {
+            git show 5b95a2420098dc39f5969ea32ac1b2f02366901b:.sync_latest/UFC_Keypad_CVTrim.lua.b64.00
+            git show 0fca1a53cf556658f9ad881e49978cad9c408984:.sync_latest/UFC_Keypad_CVTrim.lua.b64.01
+          } | base64 -d > dcs_export/UFC_Keypad_CVTrim.lua
+
+          {
+            git show 1c3ea03eb83660b80038f9dbe8d23e0666589b98:.sync_latest/_verify.py.b64.00
+            git show b4f82daaf93d3b071179f333758fe34870c7561c:.sync_latest/_verify.py.b64.01
+            git show 4829b2f0c819c60d71e9860bb6b202c488da09e5:.sync_latest/_verify.py.b64.02
+          } | base64 -d > _verify.py
+
+          sed -i 's/\r$//' ufc/cv_trim_auto.py dcs_export/UFC_Keypad_CVTrim.lua _verify.py
+
+          echo "cv_trim_auto=$(git hash-object ufc/cv_trim_auto.py)"
+          echo "export_bridge=$(git hash-object dcs_export/UFC_Keypad_CVTrim.lua)"
+          echo "verify=$(git hash-object _verify.py)"
+
+      - name: Remove temporary workflow files
+        shell: bash
+        run: |
+          rm -f .github/workflows/recover-exact-critical-files.yml
+          rm -f .github/workflows/finalize-exact-source-sync.yml
+
+      - name: Commit recovered files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: recover exact latest bridge and automation files"
+          git push origin HEAD:main
