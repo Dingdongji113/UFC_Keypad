@@ -7,8 +7,9 @@ and changes two things without duplicating the full checklist state machine:
 
 - after HMD power and INS IFA are commanded, wait 10 seconds before the first
   RDDI OSB command;
-- send each RDDI OSB as one 200 ms dual-path hold (DCS-BIOS + Export bridge),
-  instead of two separate short clicks from the two command paths.
+- send each RDDI OSB as one 200 ms DCS-BIOS hold;
+- use the Export bridge only when the DCS-BIOS press cannot be sent, never at the
+  same time as DCS-BIOS, so one requested OSB action cannot become a double click.
 """
 from __future__ import annotations
 
@@ -22,6 +23,8 @@ from ufc.cv_trim_auto import send_direct_clickable
 HMD_IFA_TO_OSB_DELAY_MS = 10000
 RDDI_OSB_HOLD_MS = 200
 RDDI_OSB_POST_RELEASE_MS = 200
+RDDI_OSB_PRIMARY_PATH = "dcs_bios"
+RDDI_OSB_BACKUP_PATH = "export_bridge"
 
 _RDDI_BUTTONS: Dict[str, Tuple[str, int, int]] = {
     "right_ddi_pb18": ("RIGHT_DDI_PB_18", 3028, 18),
@@ -31,7 +34,7 @@ _RDDI_BUTTONS: Dict[str, Tuple[str, int, int]] = {
 
 
 def install_hmd_osb_timing_fix(UFCKeypadWindowClass) -> None:
-    """Install the HMD/IFA delay and controlled RDDI OSB press behavior."""
+    """Install the HMD/IFA delay and single-path RDDI OSB press behavior."""
     if getattr(UFCKeypadWindowClass, "_hmd_osb_timing_fix_installed", False):
         return
     UFCKeypadWindowClass._hmd_osb_timing_fix_installed = True
@@ -52,30 +55,45 @@ def install_hmd_osb_timing_fix(UFCKeypadWindowClass) -> None:
         if getattr(self, "_cold_state", None) != "running":
             return
 
+        # Primary path: DCS-BIOS only.  Do not also send the Export clickable,
+        # because two independently scheduled paths can be interpreted as two
+        # presses even when they nominally overlap.
         bios_ok = dcs_bios.send_dcs_bios(ident, 1)
+        if bios_ok:
+            self._cold_log(f"{key}: DCS-BIOS HOLD {RDDI_OSB_HOLD_MS}ms")
+
+            def _release_bios() -> None:
+                if token != getattr(self, "_cold_sequence_token", 0):
+                    return
+                if getattr(self, "_cold_state", None) != "running":
+                    return
+                release_ok = dcs_bios.send_dcs_bios(ident, 0)
+                self._cold_log(
+                    f"{key}: DCS-BIOS RELEASE {'OK' if release_ok else 'FAIL'}"
+                )
+                QTimer.singleShot(RDDI_OSB_POST_RELEASE_MS, done)
+
+            QTimer.singleShot(RDDI_OSB_HOLD_MS, _release_bios)
+            return
+
+        # Backup path: Export bridge only when the DCS-BIOS press was not sent.
+        # The bridge owns both hold and release for this fallback action.
         bridge_ok = send_direct_clickable(
             36,
             command,
             1.0,
-            label=f"RDDI OSB{number} HOLD",
+            label=f"RDDI OSB{number} FALLBACK HOLD",
             hold_ms=RDDI_OSB_HOLD_MS,
             release_value=0.0,
         )
         self._cold_log(
-            f"{key}: HOLD {RDDI_OSB_HOLD_MS}ms "
-            f"DCSBIOS={'OK' if bios_ok else 'FAIL'} BRIDGE={'OK' if bridge_ok else 'FAIL'}"
+            f"{key}: DCS-BIOS PRESS FAIL; EXPORT FALLBACK "
+            f"{'OK' if bridge_ok else 'FAIL'} ({RDDI_OSB_HOLD_MS}ms)"
         )
-
-        def _release_bios() -> None:
-            if token != getattr(self, "_cold_sequence_token", 0):
-                return
-            if getattr(self, "_cold_state", None) != "running":
-                return
-            release_ok = dcs_bios.send_dcs_bios(ident, 0)
-            self._cold_log(f"{key}: RELEASE {'OK' if release_ok else 'FAIL'}")
-            QTimer.singleShot(RDDI_OSB_POST_RELEASE_MS, done)
-
-        QTimer.singleShot(RDDI_OSB_HOLD_MS, _release_bios)
+        QTimer.singleShot(
+            RDDI_OSB_HOLD_MS + RDDI_OSB_POST_RELEASE_MS,
+            done,
+        )
 
     def _cold_send_configured_async(self, key: str, done: Callable[[], None]) -> None:
         if key in _RDDI_BUTTONS:
