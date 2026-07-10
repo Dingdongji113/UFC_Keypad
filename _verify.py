@@ -21,7 +21,8 @@ mods = [
     f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/windowing.py",
     f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/realtime_rpm.py", f"{PKG_PATH}/cold_start.py",
     f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/cold_setup_split.py", f"{PKG_PATH}/cold_ui_fixups.py",
-    f"{PKG_PATH}/cv_trim_auto.py", f"{PKG_PATH}/direct_command_fixups.py", f"{PKG_PATH}/ui.py",
+    f"{PKG_PATH}/cv_trim_auto.py", f"{PKG_PATH}/direct_command_fixups.py", f"{PKG_PATH}/hmd_osb_timing.py",
+    f"{PKG_PATH}/radar_ins_steps.py", f"{PKG_PATH}/ui.py",
 ]
 for m in mods:
     py_compile.compile(m, doraise=True)
@@ -31,7 +32,8 @@ print(f"[1] COMPILE OK ({len(mods)} modules)")
 for name in [
     "constants", "crashlog", "config", "fonts", "morse", "colors", "dcs_bios", "input", "widgets",
     "startup", "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry",
-    "cold_setup_split", "cold_ui_fixups", "cv_trim_auto", "direct_command_fixups", "ui",
+    "cold_setup_split", "cold_ui_fixups", "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing",
+    "radar_ins_steps", "ui",
 ]:
     importlib.import_module("ufc." + name)
 print("[2] IMPORT OK")
@@ -50,12 +52,15 @@ import ufc.cold_start as CS
 import ufc.cold_direct_entry as CDE
 import ufc.cold_setup_split as CSS
 import ufc.direct_command_fixups as DCF
+import ufc.hmd_osb_timing as HOT
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
 from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.cold_ui_fixups import install_cold_ui_fixups
 from ufc.cv_trim_auto import install_cv_trim_automation, cv_trim_target_deg, _RECEIVER
 from ufc.direct_command_fixups import install_direct_command_fixups
+from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
+from ufc.radar_ins_steps import install_radar_ins_step_split
 from ufc.startup import STARTUP_STYLE_UFC_BIT, UFCBitStartupOverlay, attach_startup_style_settings, install_startup_overlay
 
 install_ifei_rpm_fallback()
@@ -66,6 +71,8 @@ install_split_land_cv_setup(UFCKeypadWindow)
 install_cold_ui_fixups(UFCKeypadWindow)
 install_cv_trim_automation(UFCKeypadWindow)
 install_direct_command_fixups(UFCKeypadWindow)
+install_hmd_osb_timing_fix(UFCKeypadWindow)
+install_radar_ins_step_split(UFCKeypadWindow)
 
 w = UFCKeypadWindow()
 startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
@@ -118,20 +125,22 @@ assert all(isinstance(v, QLabel) for v in w._cold_status_cells.values())
 
 w._cold_profile = "land"
 land_steps = w._cold_step_list()
-land_names = [s[0] for s in land_steps]
-assert len(land_steps) == 23
+land_names = [step[0] for step in land_steps]
+assert len(land_steps) == 24
 assert land_names[0] == "EJECT SAFE OFF"
 assert land_names[11:14] == ["APU OFF / FLAPS HALF", "BRIGHTNESS", "CANOPY / OXYGEN"]
 assert land_names[16:19] == ["FCS / RWR", "ECM REC", "MANUAL SETUP"]
 assert "IFF MANUAL" not in land_names
 assert "CAT TRIM" not in land_names
-assert land_names[-3:] == ["RADAR / INS", "HMD CAL / IFA", "COMPLETE"]
+assert land_names[-4:] == ["RADAR / INS", "AMPCD PB19", "HMD CAL / IFA", "COMPLETE"]
+assert land_steps[-4][1] == "radar_ins_confirm"
+assert land_steps[-3][1] == "ampcd_pb19_confirm"
 
 w._cold_profile = "carrier"
 cv_steps = w._cold_step_list()
-cv_names = [s[0] for s in cv_steps]
-assert len(cv_steps) == 24
-assert cv_names[-3:] == ["CAT TRIM", "HMD CAL / IFA", "COMPLETE"]
+cv_names = [step[0] for step in cv_steps]
+assert len(cv_steps) == 25
+assert cv_names[-5:] == ["RADAR / INS", "AMPCD PB19", "CAT TRIM", "HMD CAL / IFA", "COMPLETE"]
 assert cv_steps[-3][1] == "cat_trim_auto"
 assert w._cv_trim_target_deg(44000) == 16.0
 assert w._cv_trim_target_deg(45000) == 17.0
@@ -160,7 +169,7 @@ assert ecm_entries[0] == {"id": "ECM_MODE_SW", "value": 3, "delay_ms": 150}
 assert ecm_entries[1]["bridge"] == "clickable"
 assert ecm_entries[1]["device"] == 66 and ecm_entries[1]["command"] == 3001 and ecm_entries[1]["value"] == 0.3
 rwr_entries = w._cold_entries_from_config("fcs_reset_rwr_power")
-assert [(e.get("id"), e.get("value")) for e in rwr_entries[:3]] == [
+assert [(entry.get("id"), entry.get("value")) for entry in rwr_entries[:3]] == [
     ("FCS_RESET_BTN", 1), ("FCS_RESET_BTN", 0), ("RWR_POWER_BTN", 1)
 ]
 assert rwr_entries[-1]["device"] == 53 and rwr_entries[-1]["command"] == 3001 and rwr_entries[-1]["value"] == 1.0
@@ -180,11 +189,11 @@ assert w._cold_entries_from_config("right_ddi_pb18")[-1]["command"] == 3028
 assert w._cold_entries_from_config("right_ddi_pb03")[-1]["command"] == 3013
 assert w._cold_entries_from_config("right_ddi_pb20")[-1]["command"] == 3030
 
-# Verify the new manual-confirm steps without waiting five seconds or sending
-# real cockpit commands.
+# Verify the two independent RADAR/INS and PB19 confirmations, plus HMD timing.
 import ufc.cv_trim_auto as CVA
-assert CVA.INS_TO_AMPCD_DELAY_MS == 10000
 assert CVA.RDDI_OSB_INTERVAL_MS == 3000
+assert HOT.HMD_IFA_TO_OSB_DELAY_MS == 10000
+assert HOT.RDDI_OSB_HOLD_MS == 200
 _orig_async = w._cold_send_configured_async
 _orig_single_shot = CVA.QTimer.singleShot
 try:
@@ -192,17 +201,26 @@ try:
     w._cold_send_configured_async = lambda key, done: staged.append(key) or done()
     CVA.QTimer.singleShot = lambda _ms, callback: callback()
     w._cold_profile = "carrier"
+
     w._cold_state = "running"
-    w._cold_step_index = [s[0] for s in w._cold_step_list()].index("RADAR / INS")
+    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("RADAR / INS")
     w._cold_run_next_step()
-    assert staged == ["radar_opr", "ins_carrier", "ampcd_pb19"]
+    assert staged == ["radar_opr", "ins_carrier"]
     assert w._cold_state == "wait_user"
     assert w._cold_last_action == "RADAR / INS CONFIRM"
 
     staged.clear()
+    w._cold_state = "running"
+    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("AMPCD PB19")
+    w._cold_run_next_step()
+    assert staged == ["ampcd_pb19"]
+    assert w._cold_state == "wait_user"
+    assert w._cold_last_action == "AMPCD PB19 CONFIRM"
+
+    staged.clear()
     w._cold_display_mode = "night"
     w._cold_state = "running"
-    w._cold_step_index = [s[0] for s in w._cold_step_list()].index("HMD CAL / IFA")
+    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("HMD CAL / IFA")
     w._cold_run_next_step()
     assert staged == [
         "hmd_night", "ins_ifa", "right_ddi_pb18", "right_ddi_pb18",
@@ -237,7 +255,7 @@ assert sent == [("ECM_MODE_SW", 3)]
 assert bridge == [(66, 3001, 0.3, "ECM REC")]
 
 w._cold_display_mode = "day"
-brightness_ids = [e["id"] for e in w._cold_display_brightness_entries()]
+brightness_ids = [entry["id"] for entry in w._cold_display_brightness_entries()]
 for required_id in [
     "LEFT_DDI_BRT_SELECT", "RIGHT_DDI_BRT_SELECT", "AMPCD_NIGHT_DAY", "HUD_SYM_BRT_SELECT",
     "LEFT_DDI_BRT_CTL", "RIGHT_DDI_BRT_CTL", "AMPCD_BRT_CTL", "HUD_SYM_BRT",
@@ -250,7 +268,7 @@ w._cold_profile = "carrier"
 w._cold_state = "running"
 w._cold_entry_stage = CDE.ENTRY_CHECKLIST
 w._current_page = "cold_start"
-cat_index = [s[0] for s in w._cold_step_list()].index("CAT TRIM")
+cat_index = [step[0] for step in w._cold_step_list()].index("CAT TRIM")
 w._cold_step_index = cat_index
 _orig_async = w._cold_send_configured_async
 try:
@@ -273,7 +291,7 @@ w._cold_refresh_ui()
 assert w._cold_cells[CDE.P_START].label.text() == "COMPLETE"
 w.on_cell_click(CDE.P_START)
 assert w._current_page == "local_icp"
-print("[4c] COMMANDS / DIRECT BRIDGE / CV TRIM / COMPLETE OK")
+print("[4c] COMMANDS / CONFIRM STEPS / CV TRIM / COMPLETE OK")
 
 # ---- 5. UFCCell 基本点击 ----
 import ufc.widgets as W
