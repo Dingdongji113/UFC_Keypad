@@ -1,0 +1,78 @@
+name: Scheduled exact source synchronization
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  synchronize:
+    if: github.repository == 'Dingdongji113/UFC_Keypad'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out full main history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Reconstruct exact uploaded archive files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            git show 845e8cd09b8279ad1823d819fd858f1753417e0e:.sync_latest/cv_trim_auto.py.b64.00
+            git show 6d347ae75628cfbbabf4af991821cc65b6eb1e4f:.sync_latest/cv_trim_auto.py.b64.01
+          } | base64 -d > ufc/cv_trim_auto.py
+
+          {
+            git show 5b95a2420098dc39f5969ea32ac1b2f02366901b:.sync_latest/UFC_Keypad_CVTrim.lua.b64.00
+            git show 0fca1a53cf556658f9ad881e49978cad9c408984:.sync_latest/UFC_Keypad_CVTrim.lua.b64.01
+          } | base64 -d > dcs_export/UFC_Keypad_CVTrim.lua
+
+          {
+            git show 1c3ea03eb83660b80038f9dbe8d23e0666589b98:.sync_latest/_verify.py.b64.00
+            git show b4f82daaf93d3b071179f333758fe34870c7561c:.sync_latest/_verify.py.b64.01
+            git show 4829b2f0c819c60d71e9860bb6b202c488da09e5:.sync_latest/_verify.py.b64.02
+          } | base64 -d > _verify.py
+
+          files=(
+            CODEX_PROGRESS.md README.md UFC_Keypad_v5.spec _verify.py
+            dcs_export/UFC_Keypad_CVTrim.lua main.py main_safe.py
+            ufc/cv_trim_auto.py ufc/dcs_bios.py ufc/direct_command_fixups.py
+            ufc/manual_setup_auto.py ufc_config.json
+          )
+          for file in "${files[@]}"; do sed -i 's/\r$//' "$file"; done
+
+          test "$(git hash-object CODEX_PROGRESS.md)" = "8bed09623cc4aee4605488f3c51ff73a3674fb06"
+          test "$(git hash-object README.md)" = "6c983b72259f635ec562ecd32e33dbd089eec211"
+          test "$(git hash-object UFC_Keypad_v5.spec)" = "4ac629289f1bfc3261034d05730fb3976305b401"
+          test "$(git hash-object _verify.py)" = "8c0ffc785ef657358454f8eb062ff9a7a7bcd62c"
+          test "$(git hash-object dcs_export/UFC_Keypad_CVTrim.lua)" = "fa335efc5a72a13569dc6b24d58e14730ead7af0"
+          test "$(git hash-object main.py)" = "67fe815982cf0ed96656b63f4353a3532aafd1c9"
+          test "$(git hash-object main_safe.py)" = "3354e3d32c0e5eae8faae2efbc0b3dda013c7dfc"
+          test "$(git hash-object ufc/cv_trim_auto.py)" = "ef0f4a2f1409dd3097a24d7081fa66d9a25029ec"
+          test "$(git hash-object ufc/dcs_bios.py)" = "091b42c0af81782a6f185fc4e2d4cc6818b0e6b2"
+          test "$(git hash-object ufc/direct_command_fixups.py)" = "9bf4872f90f69be9deb5f4aaf25a046eb4da8eaa"
+          test "$(git hash-object ufc/manual_setup_auto.py)" = "c7a5803de12b1f80c2fc6b1c7a41660234788942"
+          test "$(git hash-object ufc_config.json)" = "0c12286b55724b5d505c0370cf87174ce997b903"
+
+      - name: Commit exact source and remove synchronization helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .sync_latest .sync_final .sync_exact
+          rm -f .github/workflows/finalize-exact-sync.yml
+          rm -f .github/workflows/finalize-exact-source-sync.yml
+          rm -f .github/workflows/recover-exact-critical-files.yml
+          rm -f .github/workflows/scheduled-exact-sync.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: synchronize exact uploaded archive source"
+          git push origin HEAD:main
