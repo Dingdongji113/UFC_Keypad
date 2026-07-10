@@ -7,7 +7,7 @@ and changes two things without duplicating the full checklist state machine:
 
 - after HMD power and INS IFA are commanded, wait 10 seconds before the first
   RDDI OSB command;
-- send each RDDI OSB as one 500 ms dual-path hold (DCS-BIOS + Export bridge),
+- send each RDDI OSB as one 200 ms dual-path hold (DCS-BIOS + Export bridge),
   instead of two separate short clicks from the two command paths.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ import ufc.dcs_bios as dcs_bios
 from ufc.cv_trim_auto import send_direct_clickable
 
 HMD_IFA_TO_OSB_DELAY_MS = 10000
-RDDI_OSB_HOLD_MS = 500
+RDDI_OSB_HOLD_MS = 200
 RDDI_OSB_POST_RELEASE_MS = 200
 
 _RDDI_BUTTONS: Dict[str, Tuple[str, int, int]] = {
@@ -31,7 +31,7 @@ _RDDI_BUTTONS: Dict[str, Tuple[str, int, int]] = {
 
 
 def install_hmd_osb_timing_fix(UFCKeypadWindowClass) -> None:
-    """Install the HMD/IFA delay and long RDDI OSB press behavior."""
+    """Install the HMD/IFA delay and controlled RDDI OSB press behavior."""
     if getattr(UFCKeypadWindowClass, "_hmd_osb_timing_fix_installed", False):
         return
     UFCKeypadWindowClass._hmd_osb_timing_fix_installed = True
@@ -57,7 +57,7 @@ def install_hmd_osb_timing_fix(UFCKeypadWindowClass) -> None:
             36,
             command,
             1.0,
-            label=f"RDDI OSB{number} LONG HOLD",
+            label=f"RDDI OSB{number} HOLD",
             hold_ms=RDDI_OSB_HOLD_MS,
             release_value=0.0,
         )
