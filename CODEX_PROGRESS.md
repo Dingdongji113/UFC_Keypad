@@ -15,12 +15,11 @@
 - A three-second hold on cockpit command 3001 was proven ineffective. The live-verified fix uses device 12 command 3023 (`APU_ControlSw_TM_WARTHOG`): value 1 latched argument 375 at 1.0 and value 0 released it.
 - Corrected ALR-67 POWER as a latching control: it is now set to 1 without an immediate release, with direct device 53/command 3001 fallback; live argument 277 latched at 1 and power light 276 illuminated.
 - Step 14 now closes the canopy and enables OBOGS.
-- Step 21 now sets RADAR OPR, selects LAND/CV INS, waits five seconds, presses AMPCD PB19, and waits for manual confirmation.
-- Added HMD calibration/INS IFA manual-confirm step (LAND 22, CV 23), using DAY/NIGHT-dependent HMD brightness.
-- INS-to-AMPCD PB19 delay increased from five to ten seconds.
+- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 21 sets RADAR OPR plus LAND/CV INS and waits for START; step 22 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
+- HMD calibration/INS IFA is now LAND step 23 and CV step 24, using DAY/NIGHT-dependent HMD brightness.
 - Step 12 now combines APU OFF with FLAPS HALF.
-- HMD setup now presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order, with three seconds after every press before continuing.
-- Live DCS bridge log acceptance measured 10.615 seconds from INS LAND to AMPCD PB19 and approximately 3.62 seconds between each RDDI OSB press; all four buttons completed their 120 ms press/release pulses in the requested order.
+- HMD setup sets INS IFA, waits ten seconds, then presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order with three seconds between completed presses.
+- Each HMD RDDI OSB uses one 200 ms DCS-BIOS press/release. Export bridge is fallback-only and is never sent simultaneously, preventing accidental double presses.
 
 ## Local findings
 
