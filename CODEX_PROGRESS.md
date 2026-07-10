@@ -125,7 +125,9 @@ history. The direct-touch implementation below replaces its targets and loops.
   probe/hook/launch-bar/wing states and forces pitch, roll, and rudder neutral.
 - Probe extend, hook down, and launch bar down each start a five-second timer at
   command transmission, then receive their restore command. Wing position is
-  reversed for 12 seconds and returned to its captured initial state.
+  reversed for 20 seconds and returned to its captured initial state. Live
+  testing showed that spread wings require UNFOLD, a HOLD dwell, handle push-in,
+  and an explicit return to the locked rotation indication.
 - After mechanism feedback confirms restoration, the program waits five seconds,
   then holds aft/forward/left/right stick for three seconds each and left/right
   rudder for five seconds each, centering between every movement.

@@ -17,7 +17,7 @@ P_CONTROL_RIGHT = (92, 2)
 
 CONTROL_TIME_SCALE = 1.0
 FEEDBACK_POLL_MS = 200
-FEEDBACK_TIMEOUT_MS = 15000
+FEEDBACK_TIMEOUT_MS = 25000
 CENTER_HOLD_MS = 500
 
 PITCH_AFT = 1.0
@@ -161,18 +161,37 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
 
         QTimer.singleShot(_ms(150), rotate)
 
-    def _control_lock_wing(self, folded: bool, generation: int) -> None:
+    def _control_lock_wing(self, folded: bool, generation: int,
+                           done: Optional[Callable[[], None]] = None) -> None:
         if not self._control_context_valid(generation):
             return
         if folded:
             self._control_send("WING_FOLD_ROTATE", 0)
             self._control_send("WING_FOLD_PULL", 1)
+            if done is not None:
+                QTimer.singleShot(_ms(500), lambda: done() if self._control_context_valid(generation) else None)
         else:
+            # Live verification: UNFOLD reaches the spread position, then the
+            # handle must dwell at HOLD, be pushed in, and finally return to
+            # the locked 0/0 indication.  Sending only HOLD leaves it visibly
+            # unlatched for several seconds.
             self._control_send("WING_FOLD_ROTATE", 1)
-            QTimer.singleShot(
-                _ms(150),
-                lambda: self._control_context_valid(generation) and self._control_send("WING_FOLD_PULL", 0),
-            )
+
+            def push_in() -> None:
+                if not self._control_context_valid(generation):
+                    return
+                self._control_send("WING_FOLD_PULL", 0)
+
+                def lock_rotation() -> None:
+                    if not self._control_context_valid(generation):
+                        return
+                    self._control_send("WING_FOLD_ROTATE", 0)
+                    if done is not None:
+                        QTimer.singleShot(_ms(500), lambda: done() if self._control_context_valid(generation) else None)
+
+                QTimer.singleShot(_ms(3000), lock_rotation)
+
+            QTimer.singleShot(_ms(1000), push_in)
 
     def _control_set_axis(self, pitch: float = 0.0, roll: float = 0.0, rudder: float = 0.0,
                           duration_ms: int = 1000, label: str = "CENTER") -> None:
@@ -293,10 +312,10 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
         self._cold_control_progress = 36
         action = "WING UNFOLD" if initial_folded else "WING FOLD"
         restore = "fold" if initial_folded else "unfold"
-        self._control_set_status(action, f"Moving wings to opposite position; {restore} command in 12 seconds.")
+        self._control_set_status(action, f"Moving wings to opposite position; {restore} command in 20 seconds.")
         self._control_set_wing(opposite, generation)
-        self._control_progress_segment(36, 56, 12000, generation)
-        self._control_after(12000, generation, lambda: self._control_wing_restore(generation))
+        self._control_progress_segment(36, 56, 20000, generation)
+        self._control_after(20000, generation, lambda: self._control_wing_restore(generation))
 
     def _control_wing_restore(self, generation: int) -> None:
         initial_folded = bool(self._cold_control_initial["wing"])
@@ -304,8 +323,11 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
         self._control_set_wing(initial_folded, generation)
 
         def restored() -> None:
-            self._control_lock_wing(initial_folded, generation)
-            self._control_mechanisms_complete(generation)
+            self._control_lock_wing(
+                initial_folded,
+                generation,
+                lambda: self._control_mechanisms_complete(generation),
+            )
 
         self._control_wait_feedback("ext_wing_folding", initial_folded, generation, restored, "WING")
 
@@ -407,8 +429,11 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
             )
             timed_out = (time.monotonic() - started) * 1000 >= _ms(FEEDBACK_TIMEOUT_MS)
             if restored or timed_out:
-                self._control_lock_wing(initial.get("wing", False), generation)
-                done(restored)
+                self._control_lock_wing(
+                    initial.get("wing", False),
+                    generation,
+                    lambda: done(restored),
+                )
                 return
             QTimer.singleShot(_ms(FEEDBACK_POLL_MS), poll)
 

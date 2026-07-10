@@ -128,6 +128,7 @@ assert rx.parser.analog_addresses[0x7574] == "ext_refuel_probe"
 assert rx.parser.analog_addresses[0x7586] == "ext_hook"
 assert rx.parser.analog_addresses[0x75AE] == "ext_launch_bar"
 assert rx.parser.analog_addresses[0x7570] == "ext_wing_folding"
+assert CCC.FEEDBACK_TIMEOUT_MS == 25000
 
 w._cold_profile = "land"
 land = w._cold_step_list()
@@ -292,6 +293,12 @@ try:
     assert axis_commands[10][:3] == (0.0, 0.0, CCC.RUDDER_RIGHT)
     ids = [item[0] for item in mechanism_commands]
     assert ids.index("PROBE_SW") < ids.index("HOOK_LEVER") < ids.index("LAUNCH_BAR_SW") < ids.index("WING_FOLD_PULL")
+    wing_commands = [item for item in mechanism_commands if item[0].startswith("WING_FOLD_")]
+    assert wing_commands[-5:] == [
+        ("WING_FOLD_PULL", 1), ("WING_FOLD_ROTATE", 2),
+        ("WING_FOLD_ROTATE", 1), ("WING_FOLD_PULL", 0),
+        ("WING_FOLD_ROTATE", 0),
+    ]
 
     # ABORT zeroes progress, forces center, restores all captured initial states,
     # and unlocks CONTINUE only after the restoration check finishes.

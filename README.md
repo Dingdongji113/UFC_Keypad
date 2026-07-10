@@ -59,7 +59,7 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 - LAND：28 步。
 - CV：29 步，其中第 27 步为自动 CAT TRIM。
 - 第 12 步 `LIGHTS / ANTI-SKID`：双发稳定后自动配置灯光和防滑，且不操作外部总灯光开关。DAY 仅将频闪灯置于 BRIGHT；NIGHT 还打开着陆/滑行灯，将编队灯、航行灯、控制台、仪表板和告警/注意灯设为约 70%，机内灯光模式置于 NITE，并以 UFC 风格依次询问是否启用 70% 泛光灯和航图灯。LAND 防滑 ON，CV 防滑 OFF。
-- 第 13 步 `CONTROL CHECK`：可选择 SKIP 或 EXECUTE。执行时依次检查受油管、阻拦钩、弹射杆、机翼折叠和三轴全行程；全程显示进度条，100% 后才开放 CONTINUE。ABORT 将进度清零、强制三轴回中并恢复四个机构的初始状态。
+- 第 13 步 `CONTROL CHECK`：可选择 SKIP 或 EXECUTE。执行时依次检查受油管、阻拦钩、弹射杆、机翼折叠和三轴全行程；机翼在相反状态保持 20 秒，展开恢复时执行 UNFOLD → HOLD → 压入 → LOCK。全程显示进度条，100% 后才开放 CONTINUE。ABORT 将进度清零、强制三轴回中并恢复四个机构的初始状态。
 - 第 16 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
 - APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
 - 第 19 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。

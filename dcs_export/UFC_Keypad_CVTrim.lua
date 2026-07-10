@@ -467,15 +467,11 @@ end
 local function apply_axis_override()
     local axis = UFC_CVTRIM.axis_override
     if not axis or not LoSetCommand then return end
-    local pitch_cmd = rawget(_G, 'iCommandPlanePitch')
-    local roll_cmd = rawget(_G, 'iCommandPlaneRoll')
-    local rudder_cmd = rawget(_G, 'iCommandPlaneRudder')
-    if not pitch_cmd or not roll_cmd or not rudder_cmd then
-        UFC_CVTRIM.last_command = 'axis failed: command constants unavailable'
-        log(UFC_CVTRIM.last_command)
-        UFC_CVTRIM.axis_override = nil
-        return
-    end
+    -- Export.lua does not expose these symbolic constants on every DCS build.
+    -- The stable simulator axis command ids are used as verified fallbacks.
+    local pitch_cmd = rawget(_G, 'iCommandPlanePitch') or 2001
+    local roll_cmd = rawget(_G, 'iCommandPlaneRoll') or 2002
+    local rudder_cmd = rawget(_G, 'iCommandPlaneRudder') or 2003
     if now_time() >= axis.until_time then
         LoSetCommand(pitch_cmd, 0.0)
         LoSetCommand(roll_cmd, 0.0)
