@@ -130,7 +130,7 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
             ("LEFT CRANK", "send", "left_engine_crank", "Auto command."),
             ("LEFT IDLE", "user", "", "Set left throttle IDLE, then START."),
             ("LEFT STABLE?", "flag_left", "", "Confirm left engine stable."),
-            ("APU OFF / FLAPS HALF", "apu_off", "apu_off_flaps_half", "Stop APU and set FLAP switch to HALF."),
+            ("APU OFF / FLAPS AUTO", "apu_off", "apu_off_flaps_auto", "Stop APU and set FLAP switch to AUTO."),
             ("BRIGHTNESS", "display_brightness", "", "Apply selected DAY/NIGHT preset."),
             ("CANOPY / OXYGEN", "supervised", "canopy_oxygen", "Close canopy and set OBOGS ON."),
             ("BLEED AIR", "supervised", "bleed_air_cycle", "Program executes; monitor cockpit."),

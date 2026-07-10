@@ -5,16 +5,6 @@
   "cold_start_profile": "land",
   "cold_start_display_mode": "day",
   "cold_start_left_rpm_threshold": 60,
-  "manual_setup_targets": {
-    "land": {
-      "radalt_min_ft": 200,
-      "bingo_fuel_lb": 3000
-    },
-    "carrier": {
-      "radalt_min_ft": 200,
-      "bingo_fuel_lb": 4000
-    }
-  },
   "display_brightness_presets": {
     "day": {
       "lddi": 80,
@@ -54,9 +44,9 @@
       "id": "APU_CONTROL_SW",
       "value": 0
     },
-    "flaps_half": {
+    "flaps_auto": {
       "id": "FLAP_SW",
-      "value": 1
+      "value": 0
     },
     "canopy_close": {
       "sequence": [

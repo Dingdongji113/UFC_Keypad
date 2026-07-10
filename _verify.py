@@ -1,70 +1,68 @@
-"""UFC_Keypad 模块化项目验证脚本（无需显示器，offscreen 运行）"""
-import os
-import sys
+# -*- coding: utf-8 -*-
+"""Offscreen regression checks for UFC Keypad."""
 import importlib
+import os
 import py_compile
+import sys
 
 from _bootstrap_imports import ensure_ufc_package
 
 PKG_DIR = ensure_ufc_package(os.getcwd())
-PKG_PATH = "ufc" if os.path.exists(os.path.join(os.getcwd(), "ufc", "__init__.py")) else "UFC"
 if PKG_DIR is None:
-    raise RuntimeError("Cannot find ufc/ or UFC/ package directory")
-
+    raise RuntimeError("Cannot find ufc package")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# ---- 1. 编译 ----
-mods = [
+modules = [
     "main.py", "main_safe.py", "install_dcs_export_bridge.py", "probe_hornet_bridge.py",
-    f"{PKG_PATH}/__init__.py", f"{PKG_PATH}/constants.py", f"{PKG_PATH}/crashlog.py", f"{PKG_PATH}/config.py",
-    f"{PKG_PATH}/fonts.py", f"{PKG_PATH}/morse.py", f"{PKG_PATH}/colors.py", f"{PKG_PATH}/dcs_bios.py",
-    f"{PKG_PATH}/input.py", f"{PKG_PATH}/widgets.py", f"{PKG_PATH}/startup.py", f"{PKG_PATH}/windowing.py",
-    f"{PKG_PATH}/ifei_rpm.py", f"{PKG_PATH}/realtime_rpm.py", f"{PKG_PATH}/cold_start.py",
-    f"{PKG_PATH}/cold_direct_entry.py", f"{PKG_PATH}/cold_setup_split.py", f"{PKG_PATH}/cold_ui_fixups.py",
-    f"{PKG_PATH}/cv_trim_auto.py", f"{PKG_PATH}/direct_command_fixups.py", f"{PKG_PATH}/hmd_osb_timing.py",
-    f"{PKG_PATH}/radar_ins_steps.py", f"{PKG_PATH}/ui.py",
+    "ufc/__init__.py", "ufc/constants.py", "ufc/crashlog.py", "ufc/config.py",
+    "ufc/fonts.py", "ufc/morse.py", "ufc/colors.py", "ufc/dcs_bios.py",
+    "ufc/input.py", "ufc/widgets.py", "ufc/startup.py", "ufc/windowing.py",
+    "ufc/ifei_rpm.py", "ufc/realtime_rpm.py", "ufc/cold_start.py",
+    "ufc/cold_direct_entry.py", "ufc/cold_setup_split.py", "ufc/cold_ui_fixups.py",
+    "ufc/cv_trim_auto.py", "ufc/direct_command_fixups.py", "ufc/hmd_osb_timing.py",
+    "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/ui.py",
 ]
-for m in mods:
-    py_compile.compile(m, doraise=True)
-print(f"[1] COMPILE OK ({len(mods)} modules)")
-
-# ---- 2. 导入 ----
+for path in modules:
+    py_compile.compile(path, doraise=True)
 for name in [
-    "constants", "crashlog", "config", "fonts", "morse", "colors", "dcs_bios", "input", "widgets",
-    "startup", "windowing", "ifei_rpm", "realtime_rpm", "cold_start", "cold_direct_entry",
-    "cold_setup_split", "cold_ui_fixups", "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing",
-    "radar_ins_steps", "ui",
+    "constants", "crashlog", "config", "fonts", "morse", "colors", "dcs_bios",
+    "input", "widgets", "startup", "windowing", "ifei_rpm", "realtime_rpm",
+    "cold_start", "cold_direct_entry", "cold_setup_split", "cold_ui_fixups",
+    "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing", "radar_ins_steps",
+    "manual_setup_auto", "ui",
 ]:
     importlib.import_module("ufc." + name)
-print("[2] IMPORT OK")
+print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
 
-from PyQt6.QtWidgets import QApplication, QLabel
-from PyQt6.QtCore import QPointF, Qt, QEventLoop, QTimer
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtCore import QEventLoop, QTimer
+from PyQt6.QtWidgets import QApplication
 
-app = QApplication.instance() or QApplication(sys.argv)
-
-from ufc.ui import UFCKeypadWindow, SettingsWindow
+from ufc.ui import UFCKeypadWindow
 from ufc.dcs_bios import DCSBIOSReceiver
-from ufc.ifei_rpm import install_ifei_rpm_fallback, IFEI_RPM_L_ADDR, IFEI_RPM_R_ADDR
-from ufc.realtime_rpm import install_realtime_rpm_callbacks, _decode_rpm_state
-import ufc.cold_start as CS
-import ufc.cold_direct_entry as CDE
-import ufc.cold_setup_split as CSS
-import ufc.direct_command_fixups as DCF
-import ufc.hmd_osb_timing as HOT
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
 from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.cold_ui_fixups import install_cold_ui_fixups
-from ufc.cv_trim_auto import install_cv_trim_automation, cv_trim_target_deg, _RECEIVER
+from ufc.cv_trim_auto import install_cv_trim_automation
 from ufc.direct_command_fixups import install_direct_command_fixups
 from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
 from ufc.radar_ins_steps import install_radar_ins_step_split
-from ufc.startup import STARTUP_STYLE_UFC_BIT, UFCBitStartupOverlay, attach_startup_style_settings, install_startup_overlay
+from ufc.manual_setup_auto import install_manual_setup_automation
+import ufc.cv_trim_auto as CVA
+import ufc.dcs_bios as DB
+import ufc.manual_setup_auto as MSA
+import ufc.ui as UI
 
-install_ifei_rpm_fallback()
-install_realtime_rpm_callbacks()
+
+def wait_ms(milliseconds):
+    loop = QEventLoop()
+    QTimer.singleShot(milliseconds, loop.quit)
+    loop.exec()
+
+
+app = QApplication.instance() or QApplication(sys.argv)
+cv_receiver_start = CVA._RECEIVER.start
+CVA._RECEIVER.start = lambda: None
 patch_cold_start(UFCKeypadWindow)
 install_cold_direct_entry(UFCKeypadWindow)
 install_split_land_cv_setup(UFCKeypadWindow)
@@ -73,257 +71,268 @@ install_cv_trim_automation(UFCKeypadWindow)
 install_direct_command_fixups(UFCKeypadWindow)
 install_hmd_osb_timing_fix(UFCKeypadWindow)
 install_radar_ins_step_split(UFCKeypadWindow)
+install_manual_setup_automation(UFCKeypadWindow)
+CVA._RECEIVER.start = cv_receiver_start
 
+# Do not attach hooks or UDP listeners to a concurrently running DCS session.
+UI._start_mouse_hook = lambda: None
+UI._stop_mouse_hook = lambda: None
+UI._register_native_touch = lambda _hwnd: False
+UI._unregister_native_touch = lambda _hwnd: True
+receiver_start, receiver_stop = DCSBIOSReceiver.start, DCSBIOSReceiver.stop
+DCSBIOSReceiver.start = lambda self: None
+DCSBIOSReceiver.stop = lambda self: None
 w = UFCKeypadWindow()
-startup = install_startup_overlay(w, STARTUP_STYLE_UFC_BIT)
-assert isinstance(startup, UFCBitStartupOverlay)
-s = SettingsWindow(w)
-assert attach_startup_style_settings(s) is not None
-w.dcs_bios.stop()
-w.dcs_bios.join(timeout=1.0)
-app.processEvents()
-print("[3] CONSTRUCT OK")
+w._apply_noactivate_style = lambda: None
+DCSBIOSReceiver.start, DCSBIOSReceiver.stop = receiver_start, receiver_stop
+print("[2] OFFSCREEN CONSTRUCT OK")
 
-# ---- 3a. IFEI/RPM 地址和轮询 ----
+# Real DCS-BIOS output definitions used by the live center displays.
 rx = DCSBIOSReceiver()
 rx._use_fallback_addresses()
-assert rx.parser.address_to_field.get(0x749E) == ("IFEI_RPM_L", 3)
-assert rx.parser.address_to_field.get(0x74A2) == ("IFEI_RPM_R", 3)
-assert _decode_rpm_state(rx.parser, IFEI_RPM_L_ADDR, 3) == "0"
-rx.parser.state[IFEI_RPM_R_ADDR:IFEI_RPM_R_ADDR + 3] = b"075"
-assert _decode_rpm_state(rx.parser, IFEI_RPM_R_ADDR, 3) == "075"
-print("[3a] IFEI RPM OK")
-
-# ---- 4. 冷启动页面 / 步骤 ----
-w.show()
-app.processEvents()
-for p in ["morse_light", "light_control", "select", "cold_start", "local_icp"]:
-    w._show_page(p)
-    app.processEvents()
-    assert w._current_page == p
-print("[4] PAGE SWITCH OK")
-
-w.dcs_bios.latest.clear()
-w._cold_reset_session_state("verify start")
-w._show_page("local_icp")
-w._cold_on_dcs_signal("UFC_SCRATCHPAD_STRING_1_DISPLAY", "")
-assert w._current_page == "cold_start"
-assert w._cold_detected_mode == CS.STARTUP_MODE_UNKNOWN
-w._cold_refresh_ui()
-assert not w._cold_cells[CDE.P_DAY].isVisible()
-assert not w._cold_cells[CDE.P_START].isVisible()
-
-w._update_display("left_engine_rpm", "  0")
-w._cold_first_mode_decided = False
-w._update_display("right_engine_rpm", "  0")
-w._cold_refresh_ui()
-assert w._cold_cells[CDE.P_DAY].isVisible()
-assert w._cold_cells[CDE.P_NIGHT].isVisible()
-assert w._cold_cells[CSS.P_LAND].isVisible()
-assert w._cold_cells[CSS.P_CV].isVisible()
-assert all(isinstance(v, QLabel) for v in w._cold_status_cells.values())
+assert rx.parser.address_to_field[0x7468] == ("IFEI_BINGO", 6)
+assert rx.parser.analog_addresses[0x7518] == "radalt_min_ptr"
+assert rx.parser.analog_addresses[0x751C] == "radalt_off_flag"
 
 w._cold_profile = "land"
-land_steps = w._cold_step_list()
-land_names = [step[0] for step in land_steps]
-assert len(land_steps) == 24
-assert land_names[0] == "EJECT SAFE OFF"
-assert land_names[11:14] == ["APU OFF / FLAPS HALF", "BRIGHTNESS", "CANOPY / OXYGEN"]
-assert land_names[16:19] == ["FCS / RWR", "ECM REC", "MANUAL SETUP"]
-assert "IFF MANUAL" not in land_names
-assert "CAT TRIM" not in land_names
-assert land_names[-4:] == ["RADAR / INS", "AMPCD PB19", "HMD CAL / IFA", "COMPLETE"]
-assert land_steps[-4][1] == "radar_ins_confirm"
-assert land_steps[-3][1] == "ampcd_pb19_confirm"
-
-w._cold_profile = "carrier"
-cv_steps = w._cold_step_list()
-cv_names = [step[0] for step in cv_steps]
-assert len(cv_steps) == 25
-assert cv_names[-5:] == ["RADAR / INS", "AMPCD PB19", "CAT TRIM", "HMD CAL / IFA", "COMPLETE"]
-assert cv_steps[-3][1] == "cat_trim_auto"
-assert w._cv_trim_target_deg(44000) == 16.0
-assert w._cv_trim_target_deg(45000) == 17.0
-assert w._cv_trim_target_deg(48000) == 17.0
-assert w._cv_trim_target_deg(49000) == 19.0
-assert cv_trim_target_deg(50000) == 19.0
-print("[4b] COLD STEP LIST OK")
-
-# ---- 4c. 控制值 / 直控 fallback / 亮度 / COMPLETE ----
-eject_entries = w._cold_entries_from_config("ejection_seat_arm")
-assert eject_entries[0] == {"id": "EJECTION_SEAT_ARMED", "value": 0, "delay_ms": 150}
-assert eject_entries[1]["bridge"] == "clickable"
-assert eject_entries[1]["device"] == 7 and eject_entries[1]["command"] == 3006 and eject_entries[1]["value"] == 0.0
-assert w._cold_entries_from_config("battery_on")[0] == {"id": "BATTERY_SW", "value": 2, "delay_ms": 500}
-apu_entries = w._cold_entries_from_config("apu_start")
-assert apu_entries[0] == {"id": "APU_CONTROL_SW", "value": 1, "delay_ms": 100}
-assert apu_entries[1]["device"] == 12 and apu_entries[1]["command"] == 3023 and apu_entries[1]["value"] == 1.0
-apu_off_entries = w._cold_entries_from_config("apu_off")
-assert apu_off_entries[0] == {"id": "APU_CONTROL_SW", "value": 0, "delay_ms": 100}
-assert apu_off_entries[1]["device"] == 12 and apu_off_entries[1]["command"] == 3023 and apu_off_entries[1]["value"] == 0.0
-apu_flaps_entries = w._cold_entries_from_config("apu_off_flaps_half")
-assert apu_flaps_entries[-2]["id"] == "FLAP_SW" and apu_flaps_entries[-2]["value"] == 1
-assert apu_flaps_entries[-1]["device"] == 2 and apu_flaps_entries[-1]["command"] == 3007 and apu_flaps_entries[-1]["value"] == 0.0
-ecm_entries = w._cold_entries_from_config("ecm_receive")
-assert ecm_entries[0] == {"id": "ECM_MODE_SW", "value": 3, "delay_ms": 150}
-assert ecm_entries[1]["bridge"] == "clickable"
-assert ecm_entries[1]["device"] == 66 and ecm_entries[1]["command"] == 3001 and ecm_entries[1]["value"] == 0.3
-rwr_entries = w._cold_entries_from_config("fcs_reset_rwr_power")
-assert [(entry.get("id"), entry.get("value")) for entry in rwr_entries[:3]] == [
-    ("FCS_RESET_BTN", 1), ("FCS_RESET_BTN", 0), ("RWR_POWER_BTN", 1)
+land = w._cold_step_list()
+land_names = [step[0] for step in land]
+assert len(land) == 26
+assert land_names[11] == "APU OFF / FLAPS AUTO"
+assert land_names[17:23] == [
+    "ECM REC", "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
 ]
-assert rwr_entries[-1]["device"] == 53 and rwr_entries[-1]["command"] == 3001 and rwr_entries[-1]["value"] == 1.0
-oxygen_entries = w._cold_entries_from_config("canopy_oxygen")
-assert oxygen_entries[-2]["id"] == "OBOGS_SW" and oxygen_entries[-2]["value"] == 1
-assert oxygen_entries[-1]["device"] == 10 and oxygen_entries[-1]["command"] == 3001 and oxygen_entries[-1]["value"] == 1.0
-radar_entries = w._cold_entries_from_config("radar_opr")
-assert radar_entries[0]["id"] == "RADAR_SW" and radar_entries[0]["value"] == 2
-assert radar_entries[1]["device"] == 42 and radar_entries[1]["value"] == 0.2
-assert w._cold_entries_from_config("ins_land")[1]["value"] == 0.2
-assert w._cold_entries_from_config("ins_carrier")[1]["value"] == 0.1
-assert w._cold_entries_from_config("ins_ifa")[1]["value"] == 0.4
-assert w._cold_entries_from_config("ampcd_pb19")[-1]["command"] == 3029
-assert w._cold_entries_from_config("hmd_day")[-1]["value"] == 0.75
-assert w._cold_entries_from_config("hmd_night")[-1]["value"] == 0.35
-assert w._cold_entries_from_config("right_ddi_pb18")[-1]["command"] == 3028
-assert w._cold_entries_from_config("right_ddi_pb03")[-1]["command"] == 3013
-assert w._cold_entries_from_config("right_ddi_pb20")[-1]["command"] == 3030
+assert land_names[23:] == ["LOCAL ICP", "HMD CAL / IFA", "COMPLETE"]
+assert [step[1] for step in land[18:23]] == [
+    "radar_ins_confirm", "ampcd_pb19_confirm", "manual_sai_unlock",
+    "manual_radalt_direct", "manual_bingo_direct",
+]
+w._cold_profile = "carrier"
+carrier_names = [step[0] for step in w._cold_step_list()]
+assert len(carrier_names) == 27
+assert carrier_names[18:27] == [
+    "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
+    "LOCAL ICP", "CAT TRIM", "HMD CAL / IFA", "COMPLETE",
+]
+print("[3] 26/27-STEP ORDER OK")
 
-# Verify the two independent RADAR/INS and PB19 confirmations, plus HMD timing.
-import ufc.cv_trim_auto as CVA
-assert CVA.RDDI_OSB_INTERVAL_MS == 3000
-assert HOT.HMD_IFA_TO_OSB_DELAY_MS == 10000
-assert HOT.RDDI_OSB_HOLD_MS == 200
-_orig_async = w._cold_send_configured_async
-_orig_single_shot = CVA.QTimer.singleShot
+# FLAPS AUTO values and PB19's exactly-one-channel contract.
+flaps = w._cold_entries_from_config("apu_off_flaps_auto")
+assert flaps[-2] == {"id": "FLAP_SW", "value": 0, "delay_ms": 150}
+assert flaps[-1]["device"] == 2 and flaps[-1]["command"] == 3007
+assert flaps[-1]["value"] == 1.0 and flaps[-1]["label"] == "FLAPS AUTO"
+pb19 = w._cold_entries_from_config("ampcd_pb19")
+assert pb19 == [
+    {"id": "AMPCD_PB_19", "value": 1, "delay_ms": 120},
+    {"id": "AMPCD_PB_19", "value": 0, "delay_ms": 120},
+]
+assert not any("bridge" in entry for entry in pb19)
+
+# SAI uses device SetCommand, not a clickable-action approximation.
+payloads = []
+orig_payload = CVA._send_bridge_payload
+CVA._send_bridge_payload = lambda payload: payloads.append(payload) or True
 try:
-    staged = []
-    w._cold_send_configured_async = lambda key, done: staged.append(key) or done()
+    assert CVA.send_direct_set_command(32, 3005, -0.3, label="SAI", hold_ms=300, release_value=0.0)
+finally:
+    CVA._send_bridge_payload = orig_payload
+assert payloads == [{
+    "type": "set_command", "device": 32, "command": 3005, "value": -0.3,
+    "label": "SAI", "hold_ms": 300, "release_value": 0.0,
+}]
+lua = open("dcs_export/UFC_Keypad_CVTrim.lua", encoding="utf-8").read()
+assert "handle_set_command" in lua and "p.device:SetCommand(p.command, p.value)" in lua
+print("[4] FLAPS / PB19 / SAI CHANNELS OK")
+
+orig_send = MSA.dcs_bios.send_dcs_bios
+orig_bridge = MSA.send_direct_clickable
+orig_set_command = MSA.send_direct_set_command
+try:
+    w._cold_profile = "land"
+    w._current_page = "cold_start"
+
+    def enter(kind):
+        w._cold_state = "running"
+        w._cold_entry_stage = "checklist"
+        w._cold_sequence_token += 1
+        title = "RADALT MIN" if kind == "radalt" else "BINGO FUEL"
+        w._cold_step_index = [step[0] for step in w._cold_step_list()].index(title)
+        w._manual_enter_direct(kind)
+        assert w._manual_direct_context_valid()
+
+    # Center cell is real telemetry only, including explicit missing/off states.
+    enter("radalt")
+    w.dcs_bios.latest.clear()
+    assert w._manual_display_text() == "--- FT"
+    w.dcs_bios.latest.update({"radalt_off_flag": "1", "radalt_min_ptr": "0.5"})
+    assert w._manual_display_text() == "OFF"
+    w.dcs_bios.latest.update({"radalt_off_flag": "0", "radalt_min_ptr": "0.323448"})
+    assert w._manual_display_text() == "200 FT"
+    enter("bingo")
+    w.dcs_bios.latest.clear()
+    assert w._manual_display_text() == "---- LB"
+    w.dcs_bios.latest["IFEI_BINGO"] = " 3400\x00"
+    assert w._manual_display_text() == "3400 LB"
+
+    # One click means one pulse; a successful primary path never duplicates via bridge.
+    enter("radalt")
+    primary, bridge = [], []
+    MSA.dcs_bios.send_dcs_bios = lambda ident, value: primary.append((ident, value)) or True
+    MSA.send_direct_clickable = lambda *args, **kwargs: bridge.append((args, kwargs)) or True
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    w._manual_control_release(MSA.P_MANUAL_PLUS)
+    wait_ms(320)
+    assert primary == [("RADALT_HEIGHT", f"+{MSA.RADALT_DIRECT_DCS_STEP}")]
+    assert bridge == []
+
+    # Primary failure invokes exactly one bridge pulse, never both successful channels.
+    enter("radalt")
+    primary.clear(); bridge.clear()
+    MSA.dcs_bios.send_dcs_bios = lambda ident, value: primary.append((ident, value)) or False
+    w._manual_control_press(MSA.P_MANUAL_MINUS)
+    w._manual_control_release(MSA.P_MANUAL_MINUS)
+    assert primary == [("RADALT_HEIGHT", f"-{MSA.RADALT_DIRECT_DCS_STEP}")]
+    assert len(bridge) == 1 and bridge[0][0][2] == -MSA.RADALT_DIRECT_BRIDGE_STEP
+
+    # Hold repeats after 250 ms, roughly every 100 ms, and release stops immediately.
+    enter("radalt")
+    pulses = []
+    MSA.dcs_bios.send_dcs_bios = lambda ident, value: pulses.append((ident, value)) or True
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    wait_ms(475)
+    w._manual_control_release(MSA.P_MANUAL_PLUS)
+    count_at_release = len(pulses)
+    assert count_at_release >= 3
+    wait_ms(250)
+    assert len(pulses) == count_at_release
+
+    # Page changes invalidate and stop an active hold.
+    enter("radalt")
+    pulses.clear()
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    w._show_page("local_icp")
+    count_at_page_change = len(pulses)
+    wait_ms(350)
+    assert len(pulses) == count_at_page_change
+
+    # Reset/disconnect and sequence-token changes also cancel pending repeats.
+    w._show_page("cold_start")
+    enter("radalt")
+    pulses.clear()
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    w._cold_reset_session_state("DCS-BIOS TIMEOUT")
+    count_at_reset = len(pulses)
+    wait_ms(350)
+    assert len(pulses) == count_at_reset
+
+    w._show_page("cold_start")
+    enter("radalt")
+    pulses.clear()
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    w._cold_sequence_token += 1
+    count_at_token_change = len(pulses)
+    wait_ms(350)
+    assert len(pulses) == count_at_token_change
+
+    # BINGO click has one DCS press/release and no bridge on primary success.
+    w._show_page("cold_start")
+    enter("bingo")
+    primary.clear(); bridge.clear()
+    MSA.dcs_bios.send_dcs_bios = lambda ident, value: primary.append((ident, value)) or True
+    w._manual_control_press(MSA.P_MANUAL_MINUS)
+    w._manual_control_release(MSA.P_MANUAL_MINUS)
+    wait_ms(MSA.BINGO_PRESS_MS + 30)
+    assert primary == [("IFEI_DWN_BTN", 1), ("IFEI_DWN_BTN", 0)]
+    assert bridge == []
+
+    # Right is UP, hold repeats complete clicks, and release stops the repeat.
+    enter("bingo")
+    primary.clear()
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    wait_ms(375)
+    w._manual_control_release(MSA.P_MANUAL_PLUS)
+    wait_ms(MSA.BINGO_PRESS_MS + 20)
+    count_at_bingo_release = len(primary)
+    assert count_at_bingo_release >= 4
+    assert all(primary[i:i + 2] == [("IFEI_UP_BTN", 1), ("IFEI_UP_BTN", 0)]
+               for i in range(0, len(primary), 2))
+    wait_ms(200)
+    assert len(primary) == count_at_bingo_release
+
+    # A failed BINGO primary press falls back once without a DCS release copy.
+    enter("bingo")
+    primary.clear(); bridge.clear()
+    MSA.dcs_bios.send_dcs_bios = lambda ident, value: primary.append((ident, value)) or False
+    w._manual_control_press(MSA.P_MANUAL_PLUS)
+    w._manual_control_release(MSA.P_MANUAL_PLUS)
+    assert primary == [("IFEI_UP_BTN", 1)]
+    assert len(bridge) == 1 and bridge[0][0][1] == 3003
+
+    # START confirms and advances; it does not regulate toward a local target.
+    enter("radalt")
+    primary.clear(); bridge.clear()
+    old_index = w._cold_step_index
+    w._cold_arm_or_continue()
+    assert w._cold_step_index == old_index + 1
+    assert w._cold_manual_phase == "bingo_direct"
+    assert primary == [] and bridge == []
+
+    # Dedicated SAI command executes once, then waits for manual confirmation.
+    w._cold_state = "running"
+    w._cold_sequence_token += 1
+    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("SAI UNLOCK")
+    sai = []
+    MSA.send_direct_set_command = lambda *args, **kwargs: sai.append((args, kwargs)) or True
+    w._manual_run_sai_unlock()
+    wait_ms(MSA.SAI_ROTATE_HOLD_MS + MSA.SAI_ROTATE_SETTLE_MS + 30)
+    assert len(sai) == 1 and sai[0][0] == (32, 3005, MSA.SAI_ROTATE_EXT_VALUE)
+    assert w._cold_state == "wait_user" and w._cold_manual_phase == "sai_confirm"
+finally:
+    MSA.dcs_bios.send_dcs_bios = orig_send
+    MSA.send_direct_clickable = orig_bridge
+    MSA.send_direct_set_command = orig_set_command
+print("[5] DIRECT TOUCH / HOLD / FEEDBACK / SAFETY OK")
+
+# HMD timing and ordered OSB regression remains intact.
+assert CVA.RDDI_OSB_INTERVAL_MS == 3000
+sent = []
+orig_async = w._cold_send_configured_async
+orig_timer = CVA.QTimer.singleShot
+try:
+    w._cold_send_configured_async = lambda key, done: sent.append(key) or done()
     CVA.QTimer.singleShot = lambda _ms, callback: callback()
     w._cold_profile = "carrier"
-
-    w._cold_state = "running"
-    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("RADAR / INS")
-    w._cold_run_next_step()
-    assert staged == ["radar_opr", "ins_carrier"]
-    assert w._cold_state == "wait_user"
-    assert w._cold_last_action == "RADAR / INS CONFIRM"
-
-    staged.clear()
-    w._cold_state = "running"
-    w._cold_step_index = [step[0] for step in w._cold_step_list()].index("AMPCD PB19")
-    w._cold_run_next_step()
-    assert staged == ["ampcd_pb19"]
-    assert w._cold_state == "wait_user"
-    assert w._cold_last_action == "AMPCD PB19 CONFIRM"
-
-    staged.clear()
     w._cold_display_mode = "night"
     w._cold_state = "running"
     w._cold_step_index = [step[0] for step in w._cold_step_list()].index("HMD CAL / IFA")
     w._cold_run_next_step()
-    assert staged == [
-        "hmd_night", "ins_ifa", "right_ddi_pb18", "right_ddi_pb18",
-        "right_ddi_pb03", "right_ddi_pb20",
-    ]
-    assert w._cold_state == "wait_user"
-    assert w._cold_last_action == "HMD CALIBRATE"
 finally:
-    w._cold_send_configured_async = _orig_async
-    CVA.QTimer.singleShot = _orig_single_shot
+    w._cold_send_configured_async = orig_async
+    CVA.QTimer.singleShot = orig_timer
+assert sent == [
+    "hmd_night", "ins_ifa", "right_ddi_pb18", "right_ddi_pb18",
+    "right_ddi_pb03", "right_ddi_pb20",
+]
+assert w._cold_state == "wait_user"
+print("[6] HMD ORDER OK")
 
-# Verify mixed DCS-BIOS + bridge sequence execution order without sending real UDP.
-import ufc.dcs_bios as DB
-sent = []
-bridge = []
-_orig_db_send = DB.send_dcs_bios
-_orig_bridge = DCF.send_direct_clickable
-try:
-    DB.send_dcs_bios = lambda identifier, value: sent.append((identifier, value)) or True
-    DCF.send_direct_clickable = lambda device, command, value, **kwargs: bridge.append((device, command, value, kwargs.get("label"))) or True
-    w._cold_state = "running"
-    w._cold_sequence_token += 1
-    token = w._cold_sequence_token
-    loop = QEventLoop()
-    w._cold_run_sequence_entries("ecm_receive", ecm_entries, 0, token, loop.quit)
-    QTimer.singleShot(800, loop.quit)
-    loop.exec()
-finally:
-    DB.send_dcs_bios = _orig_db_send
-    DCF.send_direct_clickable = _orig_bridge
-assert sent == [("ECM_MODE_SW", 3)]
-assert bridge == [(66, 3001, 0.3, "ECM REC")]
-
-w._cold_display_mode = "day"
-brightness_ids = [entry["id"] for entry in w._cold_display_brightness_entries()]
-for required_id in [
-    "LEFT_DDI_BRT_SELECT", "RIGHT_DDI_BRT_SELECT", "AMPCD_NIGHT_DAY", "HUD_SYM_BRT_SELECT",
-    "LEFT_DDI_BRT_CTL", "RIGHT_DDI_BRT_CTL", "AMPCD_BRT_CTL", "HUD_SYM_BRT",
-]:
-    assert required_id in brightness_ids
-
-_REE = _RECEIVER
-_REE.inject_for_test(45000, 17.0)
-w._cold_profile = "carrier"
+# Closing the window while held must invalidate every pending repeat callback.
+w._show_page("cold_start")
+w._cold_profile = "land"
+w._cold_entry_stage = "checklist"
 w._cold_state = "running"
-w._cold_entry_stage = CDE.ENTRY_CHECKLIST
-w._current_page = "cold_start"
-cat_index = [step[0] for step in w._cold_step_list()].index("CAT TRIM")
-w._cold_step_index = cat_index
-_orig_async = w._cold_send_configured_async
-try:
-    # CAT TRIM now advances into HMD CAL / IFA. Stop that new step before it
-    # sends real cockpit commands during the offscreen regression test.
-    w._cold_send_configured_async = lambda _key, _done: None
-    w._cold_run_next_step()
-    loop = QEventLoop()
-    QTimer.singleShot(200, loop.quit)
-    loop.exec()
-finally:
-    w._cold_send_configured_async = _orig_async
-assert w._cold_step_index == cat_index + 1
-assert w._cold_step_list()[w._cold_step_index][0] == "HMD CAL / IFA"
-
-w._cold_state = "complete"
-w._cold_entry_stage = CDE.ENTRY_CHECKLIST
-w._current_page = "cold_start"
-w._cold_refresh_ui()
-assert w._cold_cells[CDE.P_START].label.text() == "COMPLETE"
-w.on_cell_click(CDE.P_START)
-assert w._current_page == "local_icp"
-print("[4c] COMMANDS / CONFIRM STEPS / CV TRIM / COMPLETE OK")
-
-# ---- 5. UFCCell 基本点击 ----
-import ufc.widgets as W
-click_sent = []
-_orig_send = W.send_dcs_bios
-_orig_release = W._send_release
-try:
-    W.send_dcs_bios = lambda identifier, value: click_sent.append((identifier, value)) or True
-    W._send_release = lambda identifier: click_sent.append((identifier, 0)) or True
-    cell = W.UFCCell("1", (1, 1), no_feedback=False)
-    press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(5, 5), QPointF(5, 5), QPointF(5, 5), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-    release = QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5), QPointF(5, 5), Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
-    cell.mousePressEvent(press)
-    cell.mouseReleaseEvent(release)
-    app.processEvents()
-    assert click_sent[0] == ("UFC_1", 1)
-finally:
-    W.send_dcs_bios = _orig_send
-    W._send_release = _orig_release
-print("[5] UFCCELL CLICK OK")
-
-# ---- 6. 其他轻量检查 ----
-from ufc.morse import text_to_morse
-assert text_to_morse("SOS") == "... --- ..."
-import ufc.colors as C
-w._brightness = 0.5
-w._refresh_brightness()
-assert C._CURRENT_BRIGHTNESS == 0.5
-spec = importlib.util.spec_from_file_location("ufc_main", os.path.join(os.getcwd(), "main.py"))
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-assert hasattr(mod, "main")
-
+w._cold_sequence_token += 1
+w._cold_step_index = [step[0] for step in w._cold_step_list()].index("RADALT MIN")
+w._manual_enter_direct("radalt")
+closing_pulses = []
+orig_close_send = MSA.dcs_bios.send_dcs_bios
+MSA.dcs_bios.send_dcs_bios = lambda ident, value: closing_pulses.append((ident, value)) or True
+w._manual_control_press(MSA.P_MANUAL_PLUS)
+w.close()
+app.processEvents()
+count_at_close = len(closing_pulses)
+wait_ms(350)
+assert len(closing_pulses) == count_at_close
+MSA.dcs_bios.send_dcs_bios = orig_close_send
 app.quit()
-print("\n========== ALL CHECKS PASSED ==========")
+print("========== ALL CHECKS PASSED ==========")

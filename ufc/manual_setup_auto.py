@@ -1,49 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Three confirmed cold-start setup steps with touch input and feedback loops."""
+"""Direct touch controls for SAI, RADALT minimum, and IFEI BINGO setup."""
 from __future__ import annotations
 
 import math
 import re
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Optional
 
 from PyQt6.QtCore import QTimer
 
 import ufc.dcs_bios as dcs_bios
-from ufc.cold_direct_entry import PAGE
-from ufc.cold_start import _merged_config
+from ufc.cold_direct_entry import PAGE, P_RESET
 from ufc.cv_trim_auto import send_direct_clickable, send_direct_set_command
-
-DEFAULT_MANUAL_SETUP_TARGETS = {
-    "land": {"radalt_min_ft": 200, "bingo_fuel_lb": 3000},
-    "carrier": {"radalt_min_ft": 200, "bingo_fuel_lb": 4000},
-}
 
 P_MANUAL_MINUS = (90, 0)
 P_MANUAL_PLUS = (90, 2)
-RADALT_INPUT_STEP_FT = 20
-RADALT_INPUT_MIN_FT = 20
-RADALT_INPUT_MAX_FT = 5000
-BINGO_INPUT_STEP_LB = 100
-BINGO_INPUT_MIN_LB = 0
-BINGO_INPUT_MAX_LB = 20000
+
+MANUAL_REPEAT_INITIAL_DELAY_MS = 250
+RADALT_REPEAT_INTERVAL_MS = 100
+BINGO_REPEAT_INTERVAL_MS = 100
+MANUAL_FEEDBACK_REFRESH_MS = 200
+RADALT_DIRECT_DCS_STEP = 1311  # local input mapping uses relative +/-0.02
+RADALT_DIRECT_BRIDGE_STEP = 0.02
+BINGO_PRESS_MS = 40
 
 SAI_ROTATE_HOLD_MS = 300
 SAI_ROTATE_SETTLE_MS = 350
 SAI_ROTATE_EXT_VALUE = -0.3
-RADALT_TOLERANCE_FT = 10.0
-RADALT_MAX_PULSES = 150
-RADALT_FEEDBACK_TIMEOUT_MS = 1000
-RADALT_DCS_BIOS_STEP = 1000
-BINGO_TOLERANCE_LB = 0
-BINGO_MAX_PULSES = 200
-BINGO_FEEDBACK_TIMEOUT_MS = 1000
-BINGO_HOLD_MS = 160
 TELEMETRY_MAX_AGE_S = 2.0
-FEEDBACK_EPSILON = 0.0005
 
-# Local F/A-18C mainpanel_init.lua calibration. Argument 287 is a normalized
-# needle position, not feet. Convert it through both cockpit gauge curves.
+# Local F/A-18C mainpanel_init.lua calibration. Argument 287 is normalized.
 _MIN_INPUT = (-0.03, 0.0, 0.5, 0.8, 1.0)
 _MIN_OUTPUT = (0.0, 0.031, 0.525, 0.802, 0.982)
 _ALT_FT = (-10.0, 0.0, 100.0, 200.0, 300.0, 400.0, 600.0, 800.0, 1000.0, 3000.0, 5000.0, 5100.0)
@@ -74,52 +60,10 @@ def radalt_pointer_to_ft(pointer: Any) -> Optional[float]:
     return _interpolate(needle_position, _ALT_OUTPUT, _ALT_FT)
 
 
-def radalt_ft_to_pointer(feet: Any) -> Optional[float]:
-    try:
-        value = float(feet)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(value) or value < _ALT_FT[0] or value > _ALT_FT[-1]:
-        return None
-    needle_position = _interpolate(value, _ALT_FT, _ALT_OUTPUT)
-    return _interpolate(needle_position, _MIN_INPUT, _MIN_OUTPUT)
-
-
 def parse_bingo_fuel(value: Any) -> Optional[int]:
     text = str(value or "").replace("\x00", "").strip()
     match = re.search(r"\d+", text)
     return int(match.group(0)) if match else None
-
-
-def manual_setup_targets(profile: str) -> Dict[str, int]:
-    key = "carrier" if str(profile or "").lower() in ("carrier", "cv") else "land"
-    defaults = dict(DEFAULT_MANUAL_SETUP_TARGETS[key])
-    configured = _merged_config().get("manual_setup_targets", {})
-    if isinstance(configured, dict) and isinstance(configured.get(key), dict):
-        for name in ("radalt_min_ft", "bingo_fuel_lb"):
-            try:
-                defaults[name] = int(configured[key].get(name, defaults[name]))
-            except (TypeError, ValueError):
-                pass
-    defaults["radalt_min_ft"] = _snap_clamp(
-        defaults["radalt_min_ft"], RADALT_INPUT_STEP_FT, RADALT_INPUT_MIN_FT, RADALT_INPUT_MAX_FT
-    )
-    defaults["bingo_fuel_lb"] = _snap_clamp(
-        defaults["bingo_fuel_lb"], BINGO_INPUT_STEP_LB, BINGO_INPUT_MIN_LB, BINGO_INPUT_MAX_LB
-    )
-    return defaults
-
-
-def _snap_clamp(value: int, step: int, minimum: int, maximum: int) -> int:
-    snapped = int(round(int(value) / step) * step)
-    return max(minimum, min(maximum, snapped))
-
-
-def _numeric_changed(before: Any, after: Any) -> bool:
-    try:
-        return abs(float(after) - float(before)) > FEEDBACK_EPSILON
-    except (TypeError, ValueError):
-        return False
 
 
 def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
@@ -133,31 +77,42 @@ def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
     previous_handle_click = UFCKeypadWindowClass._cold_handle_click
     previous_arm_or_continue = UFCKeypadWindowClass._cold_arm_or_continue
     previous_refresh_ui = UFCKeypadWindowClass._cold_refresh_ui
+    previous_show_page = UFCKeypadWindowClass._show_page
+    previous_reset_session = UFCKeypadWindowClass._cold_reset_session_state
+    previous_close_event = UFCKeypadWindowClass.closeEvent
 
     def _init_cold_start_page(self):
         previous_init_page(self)
-        self._cold_manual_input_cells = {
-            "minus": self.place_cell("−", P_MANUAL_MINUS, 216, 430, 160, 58,
-                                     font_size=24, register=False, page=PAGE, bold=True),
-            "value": self.place_cell("", None, 392, 430, 240, 58, font_size=20,
-                                     is_variable=True, register=False, no_feedback=True, page=PAGE, bold=True),
-            "plus": self.place_cell("+", P_MANUAL_PLUS, 648, 430, 160, 58,
-                                    font_size=24, register=False, page=PAGE, bold=True),
-        }
+        minus = self.place_cell("−", P_MANUAL_MINUS, 216, 430, 160, 58,
+                                font_size=24, register=False, page=PAGE, bold=True)
+        value = self.place_cell("", None, 392, 430, 240, 58, font_size=20,
+                                is_variable=True, register=False, no_feedback=True, page=PAGE, bold=True)
+        plus = self.place_cell("+", P_MANUAL_PLUS, 648, 430, 160, 58,
+                               font_size=24, register=False, page=PAGE, bold=True)
+        self._cold_manual_input_cells = {"minus": minus, "value": value, "plus": plus}
+        minus.action_pressed.connect(self._manual_control_press)
+        plus.action_pressed.connect(self._manual_control_press)
+        minus.action_released.connect(self._manual_control_release)
+        plus.action_released.connect(self._manual_control_release)
         for cell in self._cold_manual_input_cells.values():
             cell.setVisible(False)
 
     def _cold_step_list(self):
+        original = list(previous_step_list(self))
+        moved = [step for step in original if step[0] in ("RADAR / INS", "AMPCD PB19")]
         steps = []
-        for step in previous_step_list(self):
+        for step in original:
+            if step[0] in ("RADAR / INS", "AMPCD PB19"):
+                continue
             if step[0] == "MANUAL SETUP":
+                steps.extend(moved)
                 steps.extend([
                     ("SAI UNLOCK", "manual_sai_unlock", "",
-                     "Program pulls and rotates the SAI cage knob. Verify uncaged, then press START."),
-                    ("RADALT MIN", "manual_radalt_input", "",
-                     "Use touch −/+ in 20 FT steps, press START to apply, then confirm."),
-                    ("BINGO FUEL", "manual_bingo_input", "",
-                     "Use touch −/+ in 100 LB steps, press START to apply, then confirm."),
+                     "Program rotates the SAI cage knob CCW. Verify uncaged, then press START."),
+                    ("RADALT MIN", "manual_radalt_direct", "",
+                     "Touch/hold left to decrease and right to increase. START confirms current cockpit value."),
+                    ("BINGO FUEL", "manual_bingo_direct", "",
+                     "Touch/hold left to decrease and right to increase. START confirms current IFEI value."),
                 ])
             else:
                 steps.append(step)
@@ -165,11 +120,7 @@ def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
 
     def _manual_feedback(self, name: str):
         latest = getattr(getattr(self, "dcs_bios", None), "latest", {}) or {}
-        key = {
-            "radalt": "radalt_min_ptr",
-            "radalt_off": "radalt_off_flag",
-            "bingo": "IFEI_BINGO",
-        }[name]
+        key = {"radalt": "radalt_min_ptr", "radalt_off": "radalt_off_flag", "bingo": "IFEI_BINGO"}[name]
         value = latest.get(key)
         if value not in (None, ""):
             return value
@@ -187,36 +138,133 @@ def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
                     return raw.get(bridge_key)
         return None
 
-    def _manual_valid(self, token: int) -> bool:
-        return (
-            token == getattr(self, "_cold_sequence_token", None)
-            and getattr(self, "_cold_state", None) == "running"
+    def _manual_display_text(self) -> str:
+        phase = getattr(self, "_cold_manual_phase", "")
+        if phase == "radalt_direct":
+            try:
+                if float(self._manual_feedback("radalt_off")) > 0.5:
+                    return "OFF"
+            except (TypeError, ValueError):
+                pass
+            feet = radalt_pointer_to_ft(self._manual_feedback("radalt"))
+            return "--- FT" if feet is None else f"{max(0, round(feet))} FT"
+        if phase == "bingo_direct":
+            bingo = parse_bingo_fuel(self._manual_feedback("bingo"))
+            return "---- LB" if bingo is None else f"{bingo} LB"
+        return ""
+
+    def _manual_step_kind(self) -> str:
+        steps = self._cold_step_list()
+        index = int(getattr(self, "_cold_step_index", -1))
+        return steps[index][1] if 0 <= index < len(steps) else ""
+
+    def _manual_direct_context_valid(self, generation: Optional[int] = None) -> bool:
+        phase = getattr(self, "_cold_manual_phase", "")
+        expected_kind = "manual_radalt_direct" if phase == "radalt_direct" else "manual_bingo_direct"
+        valid = (
+            getattr(self, "_cold_state", None) == "wait_user"
+            and getattr(self, "_current_page", None) == PAGE
+            and phase in ("radalt_direct", "bingo_direct")
+            and self._manual_step_kind() == expected_kind
             and getattr(self, "_cold_manual_step_index", None) == getattr(self, "_cold_step_index", None)
+            and getattr(self, "_cold_manual_token", None) == getattr(self, "_cold_sequence_token", None)
+        )
+        if generation is not None:
+            valid = valid and generation == getattr(self, "_cold_manual_repeat_generation", None)
+        return valid
+
+    def _manual_stop_repeat(self) -> None:
+        self._cold_manual_repeat_active = False
+        self._cold_manual_repeat_generation = int(getattr(self, "_cold_manual_repeat_generation", 0)) + 1
+
+    def _manual_send_radalt_step(self, direction: int) -> None:
+        value = RADALT_DIRECT_DCS_STEP if direction > 0 else -RADALT_DIRECT_DCS_STEP
+        ok = dcs_bios.send_dcs_bios("RADALT_HEIGHT", f"{value:+d}")
+        self._cold_log(f"RADALT DIRECT {'INC' if direction > 0 else 'DEC'} dcs_bios={'OK' if ok else 'FAIL'}")
+        if not ok:
+            bridge_value = RADALT_DIRECT_BRIDGE_STEP if direction > 0 else -RADALT_DIRECT_BRIDGE_STEP
+            bridge_ok = send_direct_clickable(30, 3002, bridge_value, label="RADALT DIRECT")
+            self._cold_log(f"RADALT DIRECT bridge={'OK' if bridge_ok else 'FAIL'} value={bridge_value}")
+
+    def _manual_send_bingo_step(self, direction: int) -> None:
+        ident = "IFEI_UP_BTN" if direction > 0 else "IFEI_DWN_BTN"
+        ok = dcs_bios.send_dcs_bios(ident, 1)
+        self._cold_log(f"BINGO DIRECT {ident} press dcs_bios={'OK' if ok else 'FAIL'}")
+        if ok:
+            # Release is always sent even after page/token changes so the
+            # cockpit pushbutton can never remain stuck down.
+            QTimer.singleShot(BINGO_PRESS_MS, lambda ident=ident: dcs_bios.send_dcs_bios(ident, 0))
+        else:
+            bridge_ok = send_direct_clickable(
+                33, 3003 if direction > 0 else 3004, 1.0,
+                label="BINGO DIRECT", hold_ms=BINGO_PRESS_MS, release_value=0.0,
+            )
+            self._cold_log(f"BINGO DIRECT bridge={'OK' if bridge_ok else 'FAIL'}")
+
+    def _manual_send_direct_step(self, direction: int) -> None:
+        if not self._manual_direct_context_valid():
+            self._manual_stop_repeat()
+            return
+        if self._cold_manual_phase == "radalt_direct":
+            self._manual_send_radalt_step(direction)
+        else:
+            self._manual_send_bingo_step(direction)
+        QTimer.singleShot(60, self._cold_refresh_ui)
+
+    def _manual_repeat_tick(self, generation: int, direction: int) -> None:
+        # A timer from an older press must never cancel a newer hold.
+        if generation != getattr(self, "_cold_manual_repeat_generation", None):
+            return
+        if not getattr(self, "_cold_manual_repeat_active", False) or not self._manual_direct_context_valid(generation):
+            self._manual_stop_repeat()
+            return
+        self._manual_send_direct_step(direction)
+        interval = RADALT_REPEAT_INTERVAL_MS if self._cold_manual_phase == "radalt_direct" else BINGO_REPEAT_INTERVAL_MS
+        QTimer.singleShot(interval, lambda: self._manual_repeat_tick(generation, direction))
+
+    def _manual_control_press(self, pos) -> None:
+        if pos not in (P_MANUAL_MINUS, P_MANUAL_PLUS) or not self._manual_direct_context_valid():
+            return
+        self._manual_stop_repeat()
+        direction = -1 if pos == P_MANUAL_MINUS else 1
+        self._cold_manual_repeat_active = True
+        generation = self._cold_manual_repeat_generation
+        self._manual_send_direct_step(direction)
+        QTimer.singleShot(
+            MANUAL_REPEAT_INITIAL_DELAY_MS,
+            lambda: self._manual_repeat_tick(generation, direction),
         )
 
-    def _manual_log(self, message: str) -> None:
-        self._cold_log("MANUAL_SETUP " + message)
+    def _manual_control_release(self, _pos=None) -> None:
+        self._manual_stop_repeat()
 
-    def _manual_fail(self, reason: str) -> None:
-        if getattr(self, "_cold_state", None) != "running":
+    def _manual_schedule_feedback_refresh(self, generation: int) -> None:
+        if generation != getattr(self, "_cold_manual_feedback_generation", None):
             return
-        self._cold_manual_phase = "failed"
-        self._cold_state = "wait_user"
-        self._cold_exec_phase = "USER"
-        self._cold_last_action = "MANUAL SETUP PARTIAL"
-        self._cold_step_detail = f"{reason}. Complete this item manually, then press START."
-        self._manual_log(f"failed reason={reason}")
+        if not self._manual_direct_context_valid():
+            return
         self._cold_refresh_ui()
+        QTimer.singleShot(
+            MANUAL_FEEDBACK_REFRESH_MS,
+            lambda: self._manual_schedule_feedback_refresh(generation),
+        )
 
-    def _manual_enter_confirm(self, phase: str, action: str, detail: str) -> None:
-        self._cold_manual_phase = phase
+    def _manual_enter_direct(self, kind: str) -> None:
+        self._manual_stop_repeat()
+        self._cold_manual_step_index = self._cold_step_index
+        self._cold_manual_token = self._cold_sequence_token
+        self._cold_manual_phase = f"{kind}_direct"
         self._cold_state = "wait_user"
-        self._cold_exec_phase = "USER"
-        self._cold_last_action = action
-        self._cold_step_detail = detail
+        self._cold_exec_phase = "DIRECT"
+        self._cold_last_action = "RADALT MIN" if kind == "radalt" else "BINGO FUEL"
+        self._cold_step_detail = "Hold − to decrease, + to increase. START confirms the live cockpit value."
+        self._cold_manual_feedback_generation = int(getattr(self, "_cold_manual_feedback_generation", 0)) + 1
+        generation = self._cold_manual_feedback_generation
         self._cold_refresh_ui()
+        QTimer.singleShot(MANUAL_FEEDBACK_REFRESH_MS, lambda: self._manual_schedule_feedback_refresh(generation))
 
     def _manual_run_sai_unlock(self) -> None:
+        self._manual_stop_repeat()
         token = int(getattr(self, "_cold_sequence_token", 0))
         self._cold_manual_step_index = self._cold_step_index
         self._cold_manual_phase = "sai_command"
@@ -224,296 +272,71 @@ def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
         self._cold_last_action = "SAI UNLOCK"
         self._cold_step_detail = "Rotating the SAI cage knob CCW with the dedicated uncage input."
         self._cold_refresh_ui()
-        # SAI_Rotate_EXT is an input-only command from the local FA-18C input
-        # map. It rotates the cage control without using SAI_SET, which adjusts
-        # the miniature-aircraft pitch when the knob is not pulled.
         ok = send_direct_set_command(
             32, 3005, SAI_ROTATE_EXT_VALUE,
             label="SAI CAGE KNOB CCW", hold_ms=SAI_ROTATE_HOLD_MS, release_value=0.0,
         )
-        self._manual_log(
-            f"sai channel=bridge_set_command dev=32 cmd=3005 value={SAI_ROTATE_EXT_VALUE} "
-            f"hold={SAI_ROTATE_HOLD_MS} ok={ok}"
-        )
+        self._cold_log(f"SAI UNLOCK SetCommand {'OK' if ok else 'FAIL'}")
         if not ok:
-            self._manual_fail("SAI UNLOCK SEND FAILED")
+            self._cold_state = "wait_user"
+            self._cold_exec_phase = "USER"
+            self._cold_manual_phase = "failed"
+            self._cold_last_action = "SAI UNLOCK FAILED"
+            self._cold_step_detail = "Uncage SAI manually, then press START."
+            self._cold_refresh_ui()
             return
 
         def finish():
-            if not self._manual_valid(token):
+            if token != getattr(self, "_cold_sequence_token", None) or getattr(self, "_cold_step_index", None) != self._cold_manual_step_index:
                 return
-            self._manual_enter_confirm(
-                "sai_confirm", "SAI UNLOCK CONFIRM",
-                "CCW cage-knob rotation sent. Verify SAI uncaged and attitude sphere free, then press START.",
-            )
+            self._cold_state = "wait_user"
+            self._cold_exec_phase = "USER"
+            self._cold_manual_phase = "sai_confirm"
+            self._cold_last_action = "SAI UNLOCK CONFIRM"
+            self._cold_step_detail = "Verify SAI uncaged and attitude sphere free, then press START."
+            self._cold_refresh_ui()
 
         QTimer.singleShot(SAI_ROTATE_HOLD_MS + SAI_ROTATE_SETTLE_MS, finish)
 
-    def _manual_enter_input(self, kind: str) -> None:
-        targets = manual_setup_targets(getattr(self, "_cold_profile", "land"))
-        self._cold_manual_step_index = self._cold_step_index
-        self._cold_state = "wait_user"
-        self._cold_exec_phase = "INPUT"
-        if kind == "radalt":
-            self._cold_manual_phase = "radalt_input"
-            self._cold_manual_radalt_target = targets["radalt_min_ft"]
-            self._cold_last_action = "RADALT TARGET"
-            self._cold_step_detail = "Touch −/+ (20 FT per step), then press START to power and set RADALT."
-        else:
-            self._cold_manual_phase = "bingo_input"
-            self._cold_manual_bingo_target = targets["bingo_fuel_lb"]
-            self._cold_last_action = "BINGO TARGET"
-            self._cold_step_detail = "Touch −/+ (100 LB per step), then press START to set BINGO."
-        self._cold_refresh_ui()
-
-    def _manual_adjust_input(self, direction: int) -> None:
-        phase = getattr(self, "_cold_manual_phase", "")
-        if getattr(self, "_cold_state", None) != "wait_user" or phase not in ("radalt_input", "bingo_input"):
-            return
-        if phase == "radalt_input":
-            value = int(getattr(self, "_cold_manual_radalt_target", RADALT_INPUT_MIN_FT))
-            self._cold_manual_radalt_target = max(
-                RADALT_INPUT_MIN_FT, min(RADALT_INPUT_MAX_FT, value + direction * RADALT_INPUT_STEP_FT)
-            )
-            self._cold_step_detail = f"Selected {self._cold_manual_radalt_target} FT. Press START to apply."
-        else:
-            value = int(getattr(self, "_cold_manual_bingo_target", BINGO_INPUT_MIN_LB))
-            self._cold_manual_bingo_target = max(
-                BINGO_INPUT_MIN_LB, min(BINGO_INPUT_MAX_LB, value + direction * BINGO_INPUT_STEP_LB)
-            )
-            self._cold_step_detail = f"Selected {self._cold_manual_bingo_target} LB. Press START to apply."
-        self._cold_refresh_ui()
-
-    def _manual_start_radalt_apply(self) -> None:
-        self._cold_state = "running"
-        self._cold_exec_phase = "AUTO"
-        self._cold_manual_phase = "radalt_power"
-        self._cold_manual_radalt_pulses = 0
-        token = int(self._cold_sequence_token)
-        target = int(self._cold_manual_radalt_target)
-        self._cold_last_action = "RADALT POWER / SET"
-        self._cold_step_detail = f"Powering RADALT and setting {target} FT."
-        self._cold_refresh_ui()
-        self._manual_radalt_power(token, target)
-
-    def _manual_radalt_power(self, token: int, target: int) -> None:
-        if not self._manual_valid(token):
-            return
-        try:
-            off_flag = float(self._manual_feedback("radalt_off"))
-        except (TypeError, ValueError):
-            off_flag = None
-        if off_flag is not None and off_flag <= 0.5:
-            self._manual_log(f"radalt power already on off_flag={off_flag:.3f}")
-            self._manual_radalt(token, target)
-            return
-        before = self._manual_feedback("radalt")
-        ok = dcs_bios.send_dcs_bios("RADALT_HEIGHT", f"+{RADALT_DCS_BIOS_STEP}")
-        self._manual_log(f"radalt power primary=RADALT_HEIGHT +{RADALT_DCS_BIOS_STEP} off_flag={off_flag} ok={ok}")
-
-        def verify_primary():
-            if not self._manual_valid(token):
-                return
-            try:
-                after_off = float(self._manual_feedback("radalt_off"))
-            except (TypeError, ValueError):
-                after_off = None
-            after = self._manual_feedback("radalt")
-            if (after_off is not None and after_off <= 0.5) or _numeric_changed(before, after):
-                self._manual_radalt(token, target)
-            else:
-                self._manual_radalt_power_bridge(token, target, before)
-
-        if ok:
-            QTimer.singleShot(RADALT_FEEDBACK_TIMEOUT_MS, verify_primary)
-        else:
-            self._manual_radalt_power_bridge(token, target, before)
-
-    def _manual_radalt_power_bridge(self, token: int, target: int, before: Any) -> None:
-        if not self._manual_valid(token):
-            return
-        value = RADALT_DCS_BIOS_STEP / 65535.0
-        ok = send_direct_clickable(30, 3002, value, label="RADALT POWER ON")
-        self._manual_log(f"radalt power fallback dev=30 cmd=3002 value={value:.6f} ok={ok}")
-
-        def verify():
-            if not self._manual_valid(token):
-                return
-            after = self._manual_feedback("radalt")
-            if _numeric_changed(before, after):
-                self._manual_radalt(token, target)
-            else:
-                self._manual_fail("RADALT DID NOT POWER ON")
-
-        QTimer.singleShot(RADALT_FEEDBACK_TIMEOUT_MS, verify)
-
-    def _manual_radalt(self, token: int, target: int) -> None:
-        if not self._manual_valid(token):
-            return
-        current = radalt_pointer_to_ft(self._manual_feedback("radalt"))
-        if current is None:
-            self._manual_fail("RADALT NO FEEDBACK")
-            return
-        pulse = int(getattr(self, "_cold_manual_radalt_pulses", 0))
-        self._manual_log(f"radalt current={current:.1f} target={target} pulse={pulse}")
-        if abs(current - target) <= RADALT_TOLERANCE_FT:
-            self._manual_enter_confirm(
-                "radalt_confirm", "RADALT CONFIRM",
-                f"RADALT powered and set to {current:.0f} FT (target {target} FT). Verify, then press START.",
-            )
-            return
-        if pulse >= RADALT_MAX_PULSES:
-            self._manual_fail("RADALT PULSE LIMIT")
-            return
-        direction = 1 if current < target else -1
-        before = self._manual_feedback("radalt")
-        command_value = f"{direction * RADALT_DCS_BIOS_STEP:+d}"
-        self._cold_manual_radalt_pulses = pulse + 1
-        ok = dcs_bios.send_dcs_bios("RADALT_HEIGHT", command_value)
-        self._manual_log(f"radalt primary command={command_value} pulse={pulse + 1} ok={ok}")
-
-        def verify_primary():
-            if not self._manual_valid(token):
-                return
-            after = self._manual_feedback("radalt")
-            if _numeric_changed(before, after):
-                self._manual_radalt(token, target)
-            else:
-                self._manual_radalt_bridge(token, target, direction, before)
-
-        if ok:
-            QTimer.singleShot(RADALT_FEEDBACK_TIMEOUT_MS, verify_primary)
-        else:
-            self._manual_radalt_bridge(token, target, direction, before)
-
-    def _manual_radalt_bridge(self, token: int, target: int, direction: int, before: Any) -> None:
-        if not self._manual_valid(token):
-            return
-        value = direction * RADALT_DCS_BIOS_STEP / 65535.0
-        ok = send_direct_clickable(30, 3002, value, label="RADALT MIN")
-        self._manual_log(f"radalt fallback dev=30 cmd=3002 value={value:.6f} ok={ok}")
-
-        def verify():
-            if not self._manual_valid(token):
-                return
-            after = self._manual_feedback("radalt")
-            if _numeric_changed(before, after):
-                self._manual_radalt(token, target)
-            else:
-                self._manual_fail("RADALT NO FEEDBACK CHANGE")
-
-        QTimer.singleShot(RADALT_FEEDBACK_TIMEOUT_MS, verify)
-
-    def _manual_start_bingo_apply(self) -> None:
-        self._cold_state = "running"
-        self._cold_exec_phase = "AUTO"
-        self._cold_manual_phase = "bingo_apply"
-        self._cold_manual_bingo_pulses = 0
-        target = int(self._cold_manual_bingo_target)
-        self._cold_last_action = "BINGO SET"
-        self._cold_step_detail = f"Setting BINGO to {target} LB."
-        self._cold_refresh_ui()
-        self._manual_bingo(int(self._cold_sequence_token), target)
-
-    def _manual_bingo(self, token: int, target: int) -> None:
-        if not self._manual_valid(token):
-            return
-        current = parse_bingo_fuel(self._manual_feedback("bingo"))
-        if current is None:
-            self._manual_fail("BINGO NO FEEDBACK")
-            return
-        pulse = int(getattr(self, "_cold_manual_bingo_pulses", 0))
-        self._manual_log(f"bingo current={current} target={target} pulse={pulse}")
-        if abs(current - target) <= BINGO_TOLERANCE_LB:
-            self._manual_enter_confirm(
-                "bingo_confirm", "BINGO CONFIRM",
-                f"BINGO set to {current} LB. Verify IFEI, then press START.",
-            )
-            return
-        if pulse >= BINGO_MAX_PULSES:
-            self._manual_fail("BINGO PULSE LIMIT")
-            return
-        up = current < target
-        ident = "IFEI_UP_BTN" if up else "IFEI_DWN_BTN"
-        before = current
-        self._cold_manual_bingo_pulses = pulse + 1
-        ok = dcs_bios.send_dcs_bios(ident, 1)
-        self._manual_log(f"bingo primary command={ident} 1 pulse={pulse + 1} ok={ok}")
-
-        def release_primary():
-            if not self._manual_valid(token):
-                return
-            dcs_bios.send_dcs_bios(ident, 0)
-            QTimer.singleShot(BINGO_FEEDBACK_TIMEOUT_MS, verify_primary)
-
-        def verify_primary():
-            if not self._manual_valid(token):
-                return
-            after = parse_bingo_fuel(self._manual_feedback("bingo"))
-            if after is not None and after != before:
-                self._manual_bingo(token, target)
-            else:
-                self._manual_bingo_bridge(token, target, up, before)
-
-        if ok:
-            QTimer.singleShot(BINGO_HOLD_MS, release_primary)
-        else:
-            self._manual_bingo_bridge(token, target, up, before)
-
-    def _manual_bingo_bridge(self, token: int, target: int, up: bool, before: int) -> None:
-        if not self._manual_valid(token):
-            return
-        command = 3003 if up else 3004
-        ok = send_direct_clickable(33, command, 1.0, label="BINGO", hold_ms=BINGO_HOLD_MS, release_value=0.0)
-        self._manual_log(f"bingo fallback dev=33 cmd={command} value=1 ok={ok}")
-
-        def verify():
-            if not self._manual_valid(token):
-                return
-            after = parse_bingo_fuel(self._manual_feedback("bingo"))
-            if after is not None and after != before:
-                self._manual_bingo(token, target)
-            else:
-                self._manual_fail("BINGO NO FEEDBACK CHANGE")
-
-        QTimer.singleShot(BINGO_FEEDBACK_TIMEOUT_MS + BINGO_HOLD_MS, verify)
-
     def _cold_handle_click(self, pos):
-        if pos == P_MANUAL_MINUS:
-            self._manual_adjust_input(-1)
+        if pos in (P_MANUAL_MINUS, P_MANUAL_PLUS):
+            # Press/release signals own direct control; release click must not
+            # create a second step.
             return
-        if pos == P_MANUAL_PLUS:
-            self._manual_adjust_input(1)
-            return
+        if pos == P_RESET:
+            self._manual_stop_repeat()
         previous_handle_click(self, pos)
 
     def _cold_arm_or_continue(self):
-        phase = getattr(self, "_cold_manual_phase", "")
-        if getattr(self, "_cold_state", None) == "wait_user" and phase == "radalt_input":
-            self._cold_log("RADALT TARGET ACCEPTED")
-            self._manual_start_radalt_apply()
-            return
-        if getattr(self, "_cold_state", None) == "wait_user" and phase == "bingo_input":
-            self._cold_log("BINGO TARGET ACCEPTED")
-            self._manual_start_bingo_apply()
-            return
+        if getattr(self, "_cold_manual_phase", "") in ("radalt_direct", "bingo_direct"):
+            self._manual_stop_repeat()
+            self._cold_manual_feedback_generation = int(getattr(self, "_cold_manual_feedback_generation", 0)) + 1
         previous_arm_or_continue(self)
 
     def _cold_refresh_ui(self):
         previous_refresh_ui(self)
         cells = getattr(self, "_cold_manual_input_cells", {})
-        input_visible = (
-            getattr(self, "_current_page", None) == PAGE
-            and getattr(self, "_cold_state", None) == "wait_user"
-            and getattr(self, "_cold_manual_phase", "") in ("radalt_input", "bingo_input")
-        )
+        visible = self._manual_direct_context_valid()
         for cell in cells.values():
-            cell.setVisible(input_visible)
-        if input_visible and cells.get("value"):
-            if self._cold_manual_phase == "radalt_input":
-                cells["value"].setText(f"{int(self._cold_manual_radalt_target)} FT")
-            else:
-                cells["value"].setText(f"{int(self._cold_manual_bingo_target)} LB")
+            cell.setVisible(visible)
+        if visible and cells.get("value"):
+            cells["value"].setText(self._manual_display_text())
+
+    def _show_page(self, page_name):
+        if page_name != PAGE:
+            self._manual_stop_repeat()
+            self._cold_manual_feedback_generation = int(getattr(self, "_cold_manual_feedback_generation", 0)) + 1
+        return previous_show_page(self, page_name)
+
+    def _cold_reset_session_state(self, reason: str = ""):
+        self._manual_stop_repeat()
+        self._cold_manual_feedback_generation = int(getattr(self, "_cold_manual_feedback_generation", 0)) + 1
+        return previous_reset_session(self, reason)
+
+    def closeEvent(self, event):
+        self._manual_stop_repeat()
+        self._cold_manual_feedback_generation = int(getattr(self, "_cold_manual_feedback_generation", 0)) + 1
+        return previous_close_event(self, event)
 
     def _cold_run_next_step(self):
         if getattr(self, "_cold_state", None) == "running":
@@ -525,33 +348,34 @@ def install_manual_setup_automation(UFCKeypadWindowClass) -> None:
                 if kind == "manual_sai_unlock":
                     self._manual_run_sai_unlock()
                     return
-                if kind == "manual_radalt_input":
-                    self._manual_enter_input("radalt")
+                if kind == "manual_radalt_direct":
+                    self._manual_enter_direct("radalt")
                     return
-                if kind == "manual_bingo_input":
-                    self._manual_enter_input("bingo")
+                if kind == "manual_bingo_direct":
+                    self._manual_enter_direct("bingo")
                     return
         previous_run_next_step(self)
 
     UFCKeypadWindowClass._init_cold_start_page = _init_cold_start_page
     UFCKeypadWindowClass._cold_step_list = _cold_step_list
     UFCKeypadWindowClass._manual_feedback = _manual_feedback
-    UFCKeypadWindowClass._manual_valid = _manual_valid
-    UFCKeypadWindowClass._manual_log = _manual_log
-    UFCKeypadWindowClass._manual_fail = _manual_fail
-    UFCKeypadWindowClass._manual_enter_confirm = _manual_enter_confirm
+    UFCKeypadWindowClass._manual_display_text = _manual_display_text
+    UFCKeypadWindowClass._manual_step_kind = _manual_step_kind
+    UFCKeypadWindowClass._manual_direct_context_valid = _manual_direct_context_valid
+    UFCKeypadWindowClass._manual_stop_repeat = _manual_stop_repeat
+    UFCKeypadWindowClass._manual_send_radalt_step = _manual_send_radalt_step
+    UFCKeypadWindowClass._manual_send_bingo_step = _manual_send_bingo_step
+    UFCKeypadWindowClass._manual_send_direct_step = _manual_send_direct_step
+    UFCKeypadWindowClass._manual_repeat_tick = _manual_repeat_tick
+    UFCKeypadWindowClass._manual_control_press = _manual_control_press
+    UFCKeypadWindowClass._manual_control_release = _manual_control_release
+    UFCKeypadWindowClass._manual_schedule_feedback_refresh = _manual_schedule_feedback_refresh
+    UFCKeypadWindowClass._manual_enter_direct = _manual_enter_direct
     UFCKeypadWindowClass._manual_run_sai_unlock = _manual_run_sai_unlock
-    UFCKeypadWindowClass._manual_enter_input = _manual_enter_input
-    UFCKeypadWindowClass._manual_adjust_input = _manual_adjust_input
-    UFCKeypadWindowClass._manual_start_radalt_apply = _manual_start_radalt_apply
-    UFCKeypadWindowClass._manual_radalt_power = _manual_radalt_power
-    UFCKeypadWindowClass._manual_radalt_power_bridge = _manual_radalt_power_bridge
-    UFCKeypadWindowClass._manual_radalt = _manual_radalt
-    UFCKeypadWindowClass._manual_radalt_bridge = _manual_radalt_bridge
-    UFCKeypadWindowClass._manual_start_bingo_apply = _manual_start_bingo_apply
-    UFCKeypadWindowClass._manual_bingo = _manual_bingo
-    UFCKeypadWindowClass._manual_bingo_bridge = _manual_bingo_bridge
     UFCKeypadWindowClass._cold_handle_click = _cold_handle_click
     UFCKeypadWindowClass._cold_arm_or_continue = _cold_arm_or_continue
     UFCKeypadWindowClass._cold_refresh_ui = _cold_refresh_ui
+    UFCKeypadWindowClass._show_page = _show_page
+    UFCKeypadWindowClass._cold_reset_session_state = _cold_reset_session_state
+    UFCKeypadWindowClass.closeEvent = closeEvent
     UFCKeypadWindowClass._cold_run_next_step = _cold_run_next_step

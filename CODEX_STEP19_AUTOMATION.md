@@ -1,4 +1,8 @@
-# Codex 任务：将冷启动第 19 步改为自动执行
+# Codex 任务：将冷启动第 19 步改为自动执行（已废弃）
+
+> 本文仅保留历史设计。当前实现已删除 `manual_setup_targets` 与
+> RADALT/BINGO 目标闭环；直接触控流程以 README.md 和 CODEX_PROGRESS.md
+> 为准。
 
 > 仓库：`Dingdongji113/UFC_Keypad`  
 > 任务范围：只修改第 19 步 `MANUAL SETUP` 的执行逻辑；不要回退或破坏现有冷启动、CV 自动配平、RADAR/INS 分步确认、HMD/IFA 时序和 OSB 单通道逻辑。  

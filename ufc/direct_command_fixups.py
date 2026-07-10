@@ -44,17 +44,17 @@ def install_direct_command_fixups(UFCKeypadWindowClass) -> None:
                     "value": 0.0, "label": "APU LATCH OFF", "delay_ms": 350,
                 },
             ]
-        if key == "apu_off_flaps_half":
+        if key == "apu_off_flaps_auto":
             return [
                 {"id": "APU_CONTROL_SW", "value": 0, "delay_ms": 100},
                 {
                     "bridge": "clickable", "device": 12, "command": 3023,
                     "value": 0.0, "label": "APU LATCH OFF", "delay_ms": 350,
                 },
-                {"id": "FLAP_SW", "value": 1, "delay_ms": 150},
+                {"id": "FLAP_SW", "value": 0, "delay_ms": 150},
                 {
                     "bridge": "clickable", "device": 2, "command": 3007,
-                    "value": 0.0, "label": "FLAPS HALF", "delay_ms": 350,
+                    "value": 1.0, "label": "FLAPS AUTO", "delay_ms": 350,
                 },
             ]
         if key == "ejection_seat_arm":

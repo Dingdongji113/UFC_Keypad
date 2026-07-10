@@ -63,7 +63,7 @@ DEFAULT_CONTROLS = {
     "right_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 2},
     "left_engine_crank": {"id": "ENGINE_CRANK_SW", "value": 0},
     "apu_off": {"id": "APU_CONTROL_SW", "value": 0},
-    "flaps_half": {"id": "FLAP_SW", "value": 1},
+    "flaps_auto": {"id": "FLAP_SW", "value": 0},
     "canopy_close": {
         "sequence": [
             {"id": "CANOPY_SW", "value": 2, "delay_ms": 6000},

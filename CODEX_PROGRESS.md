@@ -15,9 +15,9 @@
 - A three-second hold on cockpit command 3001 was proven ineffective. The live-verified fix uses device 12 command 3023 (`APU_ControlSw_TM_WARTHOG`): value 1 latched argument 375 at 1.0 and value 0 released it.
 - Corrected ALR-67 POWER as a latching control: it is now set to 1 without an immediate release, with direct device 53/command 3001 fallback; live argument 277 latched at 1 and power light 276 illuminated.
 - Step 14 now closes the canopy and enables OBOGS.
-- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 23 sets RADAR OPR plus LAND/CV INS and waits for START; step 24 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
+- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 19 sets RADAR OPR plus LAND/CV INS and waits for START; step 20 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
 - HMD calibration/INS IFA is now LAND step 25 and CV step 26, using DAY/NIGHT-dependent HMD brightness.
-- Step 12 now combines APU OFF with FLAPS HALF.
+- Step 12 now combines APU OFF with FLAPS AUTO using DCS-BIOS state 0 and local input value 1.0.
 - HMD setup sets INS IFA, waits ten seconds, then presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order with three seconds between completed presses.
 - Each HMD RDDI OSB uses one 200 ms DCS-BIOS press/release. Export bridge is fallback-only and is never sent simultaneously, preventing accidental double presses.
 
@@ -47,7 +47,10 @@
 
 The resulting evidence is required before changing the hard-coded ejection-seat, ECM, or trim command values.
 
-## Step 19 closed-loop automation
+## Superseded Step 19 closed-loop automation
+
+This section records the earlier implementation and is retained only as test
+history. The direct-touch implementation below replaces its targets and loops.
 
 - Added `ufc/manual_setup_auto.py` with guarded SAI, RADALT, and BINGO stages.
 - Confirmed local mappings: SAI device 32/command 3002/arguments 213 and 209;
@@ -64,17 +67,31 @@ The resulting evidence is required before changing the hard-coded ejection-seat,
   50 fine pulses; BINGO moved from 100 lb to exactly 3000 lb in 29 presses.
   Every primary action produced feedback, so the bridge was not invoked.
 
-## Follow-up: split touch setup and PB19 single press
+## Follow-up: direct touch setup and PB19 single press
 
 - Split former step 19 into `SAI UNLOCK`, `RADALT MIN`, and `BINGO FUEL`, each
   with its own user confirmation.
-- Added large on-screen touch −/+ controls. RADALT selection is 20 ft per tap;
-  BINGO selection is 100 lb per tap. Suggested profile defaults remain loaded
-  from `manual_setup_targets`.
-- RADALT now checks the OFF flag and sends a positive power-on rotary action
-  before closed-loop regulation when required.
+- Added large on-screen touch −/+ controls. They directly operate the cockpit:
+  one pulse per tap, repeat after 250 ms and then about every 100 ms while held.
+- Removed local target values and closed-loop regulation. RADALT/BINGO centers
+  are read-only real telemetry, and START only stops repeat and advances.
+- Primary DCS-BIOS and bridge fallback are mutually exclusive per pulse; the
+  bridge is used only if sending through DCS-BIOS fails.
 - SAI now uses local input command `SAI_Rotate_EXT`: device 32, command 3005,
   CCW value -0.3, through the bridge `SetCommand` path. It does not use the
   normal SAI pitch-adjust rotary.
 - AMPCD PB19 now contains exactly one DCS-BIOS press/release pair. The former
   unconditional bridge copy was removed to eliminate the observed double tap.
+
+## Live direct-control acceptance
+
+- Installed bridge SHA-256 matches the repository source and DCS logged a fresh
+  bridge load.
+- Live DCS-BIOS state showed FLAPS HALF (`1`) before the test; sending the new
+  AUTO state (`0`) moved it to AUTO and it remained there.
+- Live BINGO increment changed the IFEI value from 0 to 100 lb; decrement
+  restored it to 0 lb, confirming right-increase and left-decrease mapping.
+- Live RADALT `+1311` increased the pointer and `-1311` decreased it; the final
+  decrement restored one step after the increment. No bridge duplicate was sent.
+- Live bridge logging confirmed SAI `SetCommand` device 32/command 3005 at
+  `-0.3`, followed by its timed release to `0` after 300 ms.

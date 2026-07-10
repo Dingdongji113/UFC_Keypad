@@ -350,6 +350,7 @@ class DCSBIOSReceiver(threading.Thread):
         'UFC_OPTION_CUEING_4':            ('cueing_4',          (3, 4),       1),
         'UFC_OPTION_CUEING_5':            ('cueing_5',          (4, 4),       1),
         'UFC_BRT':                        ('ufc_brightness',    None,         0),  # UFC 亮度旋钮 0.0~1.0
+        'IFEI_BINGO':                     ('ifei_bingo',        None,         6),
     }
 
     # 需要拼接成组合字符串的位置 → 需要合并的内部字段名列表
@@ -549,6 +550,7 @@ class DCSBIOSReceiver(threading.Thread):
             0x7446: ('UFC_SCRATCHPAD_NUMBER_DISPLAY',  8),
             0x744e: ('UFC_SCRATCHPAD_STRING_1_DISPLAY',2),
             0x7450: ('UFC_SCRATCHPAD_STRING_2_DISPLAY',2),
+            0x7468: ('IFEI_BINGO',                     6),
         }
 
         addr_map = {}
@@ -564,12 +566,15 @@ class DCSBIOSReceiver(threading.Thread):
     def _inject_analog_addresses(self):
         """注入模拟量+灯光整数字段地址"""
         self.parser.analog_addresses[0x741E] = 'ufc_brightness'
+        self.parser.analog_addresses[0x74E8] = 'sai_att_warning'
+        self.parser.analog_addresses[0x7518] = 'radalt_min_ptr'
+        self.parser.analog_addresses[0x751C] = 'radalt_off_flag'
         # 外部灯光输出地址 (来源: Addresses.h)
         self.parser.integer_addrs[0x7526] = ('formation_dimmer', 0xFFFF, 0)   # 编队灯 0-65535
         self.parser.integer_addrs[0x7524] = ('position_dimmer',  0xFFFF, 0)   # 航线灯 0-65535
         self.parser.integer_addrs[0x7480] = ('ldg_taxi_sw',      0x8000, 15)  # 着陆/滑行灯 bit15
         self.parser.integer_addrs[0x74B0] = ('strobe_sw',        0x3000, 12)  # 频闪灯 bits12-13
-        print(f"[DCS-BIOS] Injected 5 address-mapped fields (UFC_BRT + 4 lights)")
+        print(f"[DCS-BIOS] Injected 8 address-mapped fields (UFC_BRT, SAI, RADALT + 4 lights)")
 
     def run(self):
         """线程主循环"""

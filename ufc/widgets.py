@@ -21,6 +21,8 @@ from ufc.dcs_bios import UFC_BIOS_MAP, _MIN_PRESS_MS, _send_release, send_dcs_bi
 class UFCCell(QFrame):
     """UFC 按钮单元格 - 有边框可点击"""
     clicked = pyqtSignal(tuple)
+    action_pressed = pyqtSignal(tuple)
+    action_released = pyqtSignal(tuple)
 
     def __init__(self, text, pos, font_size=16, is_variable=False, bold=False, parent=None, no_feedback=False, var_align=None):
         super().__init__(parent)
@@ -88,6 +90,7 @@ class UFCCell(QFrame):
                 """)
             # 发送 DCS-BIOS press (1)
             if self.pos is not None:
+                self.action_pressed.emit(self.pos)
                 bios_entry = UFC_BIOS_MAP.get(self.pos)
                 if isinstance(bios_entry, str):
                     send_dcs_bios(bios_entry, 1)
@@ -104,6 +107,7 @@ class UFCCell(QFrame):
             if not self._no_feedback:
                 self._refresh_stylesheet()
             if self.pos is not None:
+                self.action_released.emit(self.pos)
                 bios_entry = UFC_BIOS_MAP.get(self.pos)
                 if isinstance(bios_entry, str) and self._bios_pressed:
                     identifier = bios_entry
@@ -218,6 +222,7 @@ class UFCCell(QFrame):
         """)
         # 发送 DCS-BIOS press (1)
         if self.pos is not None:
+            self.action_pressed.emit(self.pos)
             bios_entry = UFC_BIOS_MAP.get(self.pos)
             if isinstance(bios_entry, str):
                 send_dcs_bios(bios_entry, 1)
@@ -230,6 +235,7 @@ class UFCCell(QFrame):
         if not self._no_feedback:
             self._refresh_stylesheet()
         if self.pos is not None:
+            self.action_released.emit(self.pos)
             bios_entry = UFC_BIOS_MAP.get(self.pos)
             if isinstance(bios_entry, str) and self._bios_pressed:
                 identifier = bios_entry

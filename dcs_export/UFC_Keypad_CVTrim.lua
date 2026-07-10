@@ -96,6 +96,26 @@ local function get_cockpit_params()
     return nil
 end
 
+local function get_ifei_bingo()
+    if not list_indication then return nil end
+    local ok, indication = pcall(list_indication, 5)
+    if not ok or type(indication) ~= 'string' then return nil end
+    local separator = '-----------------------------------------'
+    local current_key = nil
+    for line in string.gmatch(indication .. '\n', '([^\r\n]*)[\r\n]+') do
+        if line == separator then
+            current_key = nil
+        elseif current_key == nil then
+            current_key = line
+        elseif current_key == 'txt_BINGO' then
+            return line
+        else
+            current_key = nil
+        end
+    end
+    return nil
+end
+
 local function cockpit_param_number(params, name)
     if type(params) ~= 'string' then return nil end
     local prefix = name .. ':'
@@ -156,6 +176,8 @@ local function append_probe_args(parts)
     table.insert(parts, json_number('radar_arg_440', cockpit_arg(440)))
     table.insert(parts, json_number('ins_arg_443', cockpit_arg(443)))
     table.insert(parts, json_number('hmd_brt_arg_136', cockpit_arg(136)))
+    table.insert(parts, json_number('radalt_min_arg_287', cockpit_arg(287)))
+    table.insert(parts, json_number('radalt_off_arg_288', cockpit_arg(288)))
     -- Candidate stabilator / trim draw args. probe_hornet_bridge.py will show which one moves.
     for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
         table.insert(parts, json_number('trim_arg_' .. tostring(arg), cockpit_arg(arg)))
@@ -185,6 +207,7 @@ local function send_telemetry()
         json_number('time', now_time()),
         json_number('gross_weight_lbs', weight),
         json_number('stab_trim_deg', trim),
+        json_string_value('ifei_bingo', get_ifei_bingo()),
         json_string_value('param_probe', UFC_CVTRIM.param_probe)
     }
     append_probe_args(parts)
@@ -266,6 +289,35 @@ local function handle_clickable(msg)
             command = command,
             value = release_value,
             label = label,
+        }
+    end
+end
+
+local function handle_set_command(msg)
+    local device_id = json_number_value(msg, 'device')
+    local command = json_number_value(msg, 'command')
+    local value = json_number_value(msg, 'value')
+    local label = json_string(msg, 'label') or 'set_command'
+    local hold_ms = json_number_value(msg, 'hold_ms') or 0
+    local release_value = json_number_value(msg, 'release_value')
+    if not device_id or not command or value == nil then
+        log('bad set_command payload: ' .. tostring(msg))
+        return
+    end
+    local dev = GetDevice and GetDevice(device_id) or nil
+    if not dev or not dev.SetCommand then
+        log('no SetCommand device/action for ' .. label .. ' device=' .. tostring(device_id))
+        UFC_CVTRIM.last_command = 'set_command failed no device ' .. tostring(label)
+        return
+    end
+    dev:SetCommand(command, value)
+    UFC_CVTRIM.last_command = string.format('set_command %s dev=%s cmd=%s value=%s', label, tostring(device_id), tostring(command), tostring(value))
+    log(UFC_CVTRIM.last_command)
+    if release_value ~= nil and hold_ms > 0 then
+        UFC_CVTRIM.pending_release = {
+            time = now_time() + hold_ms / 1000.0,
+            type = 'set_command', device = dev, command = command,
+            value = release_value, label = label,
         }
     end
 end
@@ -360,6 +412,8 @@ local function handle_command(msg)
     local typ = json_string(msg, 'type')
     if typ == 'clickable' then
         handle_clickable(msg)
+    elseif typ == 'set_command' then
+        handle_set_command(msg)
     elseif typ == 'trim' then
         handle_trim(msg)
     elseif typ == 'ping' then
@@ -388,6 +442,10 @@ local function release_pending()
     if p.type == 'clickable' then
         p.device:performClickableAction(p.command, p.value)
         UFC_CVTRIM.last_command = string.format('clickable release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value))
+        log(UFC_CVTRIM.last_command)
+    elseif p.type == 'set_command' then
+        p.device:SetCommand(p.command, p.value)
+        UFC_CVTRIM.last_command = string.format('set_command release %s cmd=%s value=%s', tostring(p.label), tostring(p.command), tostring(p.value))
         log(UFC_CVTRIM.last_command)
     elseif p.type == 'trim' then
         p.device:performClickableAction(p.cmd, 0.0)

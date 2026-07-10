@@ -174,6 +174,24 @@ def send_direct_clickable(device: int, command: int, value: float, *, label: str
     return _send_bridge_payload(payload)
 
 
+def send_direct_set_command(device: int, command: int, value: float, *, label: str = "", hold_ms: int = 0,
+                            release_value: Optional[float] = None) -> bool:
+    """Send a device SetCommand action through the Export.lua bridge."""
+    payload: Dict[str, Any] = {
+        "type": "set_command",
+        "device": int(device),
+        "command": int(command),
+        "value": float(value),
+    }
+    if label:
+        payload["label"] = str(label)
+    if hold_ms:
+        payload["hold_ms"] = int(hold_ms)
+    if release_value is not None:
+        payload["release_value"] = float(release_value)
+    return _send_bridge_payload(payload)
+
+
 def send_cv_trim_pulse(direction: str, pulse_ms: int = TRIM_PULSE_MS) -> bool:
     """Send a trim pulse request to the optional DCS Export bridge."""
     direction = str(direction).lower().strip()
