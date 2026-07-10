@@ -1,0 +1,48 @@
+name: Finalize latest source sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-latest-sync.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Reconstruct remaining files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .sync_final/remaining.tar.gz.b64.* | base64 -d > /tmp/ufc_remaining.tar.gz
+          tar -xzf /tmp/ufc_remaining.tar.gz
+
+          test "$(git hash-object _verify.py)" = "8c0ffc785ef657358454f8eb062ff9a7a7bcd62c"
+          test "$(git hash-object dcs_export/UFC_Keypad_CVTrim.lua)" = "fa335efc5a72a13569dc6b24d58e14730ead7af0"
+          test "$(git hash-object ufc/cv_trim_auto.py)" = "ef0f4a2f1409dd3097a24d7081fa66d9a25029ec"
+          test "$(git hash-object ufc/dcs_bios.py)" = "091b42c0af81782a6f185fc4e2d4cc6818b0e6b2"
+
+      - name: Remove temporary staging files
+        shell: bash
+        run: |
+          rm -rf .sync_latest .sync_final
+          rm -f .github/workflows/finalize-latest-sync.yml
+
+      - name: Commit synchronized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: complete latest manual setup automation sync"
+          git push origin HEAD:main
