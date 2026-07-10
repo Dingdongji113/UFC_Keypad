@@ -113,3 +113,7 @@ history. The direct-touch implementation below replaces its targets and loops.
   switch state matched, and 45875 input values reported as 45874 due to cockpit
   analog quantization (effectively 70%). The original cockpit lighting state was
   restored exactly after the test.
+- Reduced FLOOD/CHART question text to fit the 240 px read-only center cell.
+  The main action button now reads CONFIRM during initial setup, START on
+  checklist step 1, CONTINUE from step 2 onward, and COMPLETE at the end; all
+  four labels are covered by font-width regression checks.

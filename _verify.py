@@ -35,12 +35,14 @@ for name in [
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
 
 from PyQt6.QtCore import QEventLoop, QTimer
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
 from ufc.ui import UFCKeypadWindow
 from ufc.dcs_bios import DCSBIOSReceiver
 from ufc.cold_start import patch_cold_start
 from ufc.cold_direct_entry import install_cold_direct_entry
+from ufc.cold_direct_entry import P_START
 from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.cold_ui_fixups import install_cold_ui_fixups
 from ufc.cv_trim_auto import install_cv_trim_automation
@@ -89,6 +91,28 @@ w = UFCKeypadWindow()
 w._apply_noactivate_style = lambda: None
 DCSBIOSReceiver.start, DCSBIOSReceiver.stop = receiver_start, receiver_stop
 print("[2] OFFSCREEN CONSTRUCT OK")
+
+# Primary action text: setup CONFIRM, checklist step 1 START, step 2+ CONTINUE.
+w._cold_first_mode_decided = True
+w._cold_detected_mode = "cold"
+w._cold_entry_stage = "setup"
+w._cold_state = "idle"
+w._cold_step_index = -1
+w._cold_refresh_ui()
+primary_button = w._cold_cells[P_START]
+assert primary_button.label.text() == "CONFIRM"
+w._cold_entry_stage = "checklist"
+w._cold_step_index = 0
+w._cold_refresh_ui()
+assert primary_button.label.text() == "START"
+w._cold_step_index = 1
+w._cold_refresh_ui()
+assert primary_button.label.text() == "CONTINUE"
+assert QFontMetrics(primary_button.label.font()).horizontalAdvance("CONTINUE") < primary_button.width() - 20
+w._cold_state = "complete"
+w._cold_refresh_ui()
+assert primary_button.label.text() == "COMPLETE"
+print("[2a] CONFIRM / START / CONTINUE LABELS FIT")
 
 # Real DCS-BIOS output definitions used by the live center displays.
 rx = DCSBIOSReceiver()
@@ -162,6 +186,10 @@ try:
     assert w._cold_state == "wait_user" and w._cold_lighting_phase == "ask_flood"
     assert not w._cold_lighting_cells["yes"].isHidden()
     assert w._cold_lighting_cells["question"]._var_text == "FLOOD LIGHT?"
+    question_cell = w._cold_lighting_cells["question"]
+    question_metrics = QFontMetrics(question_cell._var_font)
+    assert question_metrics.horizontalAdvance("FLOOD LIGHT?") < question_cell.width() - 12
+    assert question_metrics.horizontalAdvance("CHART LIGHT?") < question_cell.width() - 12
     w._cold_handle_click(CLA.P_LIGHT_YES)
     assert w._cold_lighting_phase == "ask_chart"
     old_index = w._cold_step_index

@@ -71,6 +71,7 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 - LAND/CV 第 25 步为 `LOCAL ICP`；CV 第 26 步为自动 `CAT TRIM`。
 - LAND 第 26 步、CV 第 27 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
 - HMD 打开后严格按 `RDDI OSB18 → OSB18 → OSB3 → OSB20` 执行，每次按键完成后等待 3 秒。
+- 主操作按钮在初始 DAY/NIGHT、LAND/CV 选择阶段显示 `CONFIRM`；清单第 1 步显示 `START`，从第 2 步起显示 `CONTINUE`，完成后显示 `COMPLETE`。
 
 ## 启动动画设置
 

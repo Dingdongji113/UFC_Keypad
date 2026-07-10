@@ -33,7 +33,7 @@ def install_cold_lighting_automation(UFCKeypadWindowClass) -> None:
         )
         question_cell = self.place_cell(
             "", None, 392, 430, 240, 58,
-            font_size=19, is_variable=True, register=False,
+            font_size=13, is_variable=True, register=False,
             no_feedback=True, page=PAGE, bold=True,
         )
         yes_cell = self.place_cell(

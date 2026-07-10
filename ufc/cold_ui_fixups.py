@@ -96,8 +96,8 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
                                    register=False, page=PAGE, bold=True)
             self._cold_cells[pos] = cell
 
-        start = self.place_cell("START", P_START, 312, 505, 400, 82,
-                                font_size=25, register=False, page=PAGE, bold=True)
+        start = self.place_cell("CONFIRM", P_START, 312, 505, 400, 82,
+                                font_size=21, register=False, page=PAGE, bold=True)
         self._cold_cells[P_START] = start
 
         reset = self.place_cell("RESET", P_RESET, 884, 545, 132, 42,
@@ -330,7 +330,15 @@ def install_cold_ui_fixups(UFCKeypadWindowClass) -> None:
         start = getattr(self, "_cold_cells", {}).get(P_START)
         if start:
             start.setVisible(is_page and not waiting_for_rpm)
-            start.setText("COMPLETE" if getattr(self, "_cold_state", None) == "complete" else "START")
+            if getattr(self, "_cold_state", None) == "complete":
+                button_text = "COMPLETE"
+            elif in_setup:
+                button_text = "CONFIRM"
+            elif int(getattr(self, "_cold_step_index", -1)) >= 1:
+                button_text = "CONTINUE"
+            else:
+                button_text = "START"
+            start.setText(button_text)
 
     def _cold_entries_from_config(self, key: str):
         entries = previous_entries_from_config(self, key)
