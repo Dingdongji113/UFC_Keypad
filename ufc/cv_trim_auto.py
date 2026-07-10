@@ -192,6 +192,19 @@ def send_direct_set_command(device: int, command: int, value: float, *, label: s
     return _send_bridge_payload(payload)
 
 
+def send_axis_override(pitch: float = 0.0, roll: float = 0.0, rudder: float = 0.0,
+                       *, duration_ms: int = 1000, label: str = "CONTROL CHECK") -> bool:
+    """Continuously override flight-control axes through the Export bridge."""
+    return _send_bridge_payload({
+        "type": "axis",
+        "pitch": max(-1.0, min(1.0, float(pitch))),
+        "roll": max(-1.0, min(1.0, float(roll))),
+        "rudder": max(-1.0, min(1.0, float(rudder))),
+        "duration_ms": max(50, int(duration_ms)),
+        "label": str(label),
+    })
+
+
 def send_cv_trim_pulse(direction: str, pulse_ms: int = TRIM_PULSE_MS) -> bool:
     """Send a trim pulse request to the optional DCS Export bridge."""
     direction = str(direction).lower().strip()

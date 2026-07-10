@@ -39,6 +39,7 @@ a = Analysis(
         'ufc.radar_ins_steps',
         'ufc.manual_setup_auto',
         'ufc.cold_lighting_auto',
+        'ufc.cold_control_check',
         'ufc.ui',
     ],
     hookspath=[],

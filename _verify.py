@@ -20,7 +20,8 @@ modules = [
     "ufc/ifei_rpm.py", "ufc/realtime_rpm.py", "ufc/cold_start.py",
     "ufc/cold_direct_entry.py", "ufc/cold_setup_split.py", "ufc/cold_ui_fixups.py",
     "ufc/cv_trim_auto.py", "ufc/direct_command_fixups.py", "ufc/hmd_osb_timing.py",
-    "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/cold_lighting_auto.py", "ufc/ui.py",
+    "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/cold_lighting_auto.py",
+    "ufc/cold_control_check.py", "ufc/ui.py",
 ]
 for path in modules:
     py_compile.compile(path, doraise=True)
@@ -29,7 +30,7 @@ for name in [
     "input", "widgets", "startup", "windowing", "ifei_rpm", "realtime_rpm",
     "cold_start", "cold_direct_entry", "cold_setup_split", "cold_ui_fixups",
     "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing", "radar_ins_steps",
-    "manual_setup_auto", "cold_lighting_auto", "ui",
+    "manual_setup_auto", "cold_lighting_auto", "cold_control_check", "ui",
 ]:
     importlib.import_module("ufc." + name)
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
@@ -51,10 +52,12 @@ from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
 from ufc.radar_ins_steps import install_radar_ins_step_split
 from ufc.manual_setup_auto import install_manual_setup_automation
 from ufc.cold_lighting_auto import install_cold_lighting_automation
+from ufc.cold_control_check import install_cold_control_check
 import ufc.cv_trim_auto as CVA
 import ufc.dcs_bios as DB
 import ufc.manual_setup_auto as MSA
 import ufc.cold_lighting_auto as CLA
+import ufc.cold_control_check as CCC
 import ufc.ui as UI
 
 
@@ -77,6 +80,7 @@ install_hmd_osb_timing_fix(UFCKeypadWindow)
 install_radar_ins_step_split(UFCKeypadWindow)
 install_manual_setup_automation(UFCKeypadWindow)
 install_cold_lighting_automation(UFCKeypadWindow)
+install_cold_control_check(UFCKeypadWindow)
 CVA._RECEIVER.start = cv_receiver_start
 
 # Do not attach hooks or UDP listeners to a concurrently running DCS session.
@@ -120,28 +124,32 @@ rx._use_fallback_addresses()
 assert rx.parser.address_to_field[0x7468] == ("IFEI_BINGO", 6)
 assert rx.parser.analog_addresses[0x7518] == "radalt_min_ptr"
 assert rx.parser.analog_addresses[0x751C] == "radalt_off_flag"
+assert rx.parser.analog_addresses[0x7574] == "ext_refuel_probe"
+assert rx.parser.analog_addresses[0x7586] == "ext_hook"
+assert rx.parser.analog_addresses[0x75AE] == "ext_launch_bar"
+assert rx.parser.analog_addresses[0x7570] == "ext_wing_folding"
 
 w._cold_profile = "land"
 land = w._cold_step_list()
 land_names = [step[0] for step in land]
-assert len(land) == 27
-assert land_names[11:13] == ["LIGHTS / ANTI-SKID", "APU OFF / FLAPS AUTO"]
-assert land_names[18:24] == [
+assert len(land) == 28
+assert land_names[11:14] == ["LIGHTS / ANTI-SKID", "CONTROL CHECK", "APU OFF / FLAPS AUTO"]
+assert land_names[19:25] == [
     "ECM REC", "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
 ]
-assert land_names[24:] == ["LOCAL ICP", "HMD CAL / IFA", "COMPLETE"]
-assert [step[1] for step in land[19:24]] == [
+assert land_names[25:] == ["LOCAL ICP", "HMD CAL / IFA", "COMPLETE"]
+assert [step[1] for step in land[20:25]] == [
     "radar_ins_confirm", "ampcd_pb19_confirm", "manual_sai_unlock",
     "manual_radalt_direct", "manual_bingo_direct",
 ]
 w._cold_profile = "carrier"
 carrier_names = [step[0] for step in w._cold_step_list()]
-assert len(carrier_names) == 28
-assert carrier_names[19:28] == [
+assert len(carrier_names) == 29
+assert carrier_names[20:29] == [
     "RADAR / INS", "AMPCD PB19", "SAI UNLOCK", "RADALT MIN", "BINGO FUEL",
     "LOCAL ICP", "CAT TRIM", "HMD CAL / IFA", "COMPLETE",
 ]
-print("[3] 27/28-STEP ORDER OK")
+print("[3] 28/29-STEP ORDER OK")
 
 # Post-engine lighting: external master is untouched and 70% uses BRT=100%.
 assert CLA.LIGHT_BRIGHTNESS_VALUE == 45875
@@ -202,6 +210,114 @@ assert {entry["id"]: entry["value"] for entry in captured_lighting}["FLOOD_DIMME
 assert {entry["id"]: entry["value"] for entry in captured_lighting}["CHART_DIMMER"] == 0
 print("[3a] POST-ENGINE LIGHTING / ANTI-SKID / PROMPTS OK")
 
+# Optional CONTROL CHECK: exact sequence, progress lock, skip, and ABORT restore.
+control_index = [step[0] for step in w._cold_step_list()].index("CONTROL CHECK")
+w._cold_step_index = control_index
+w._cold_state = "running"
+w._cold_sequence_token += 1
+w._cold_run_next_step()
+assert w._cold_control_phase == "ask" and w._cold_state == "wait_user"
+assert w._cold_control_cells["left"].label.text() == "SKIP"
+assert w._cold_control_cells["right"].label.text() == "EXECUTE"
+assert not w._cold_cells[P_START].isEnabled()
+
+# SKIP advances immediately without running commands.
+skip_next = []
+original_next = w._cold_run_next_step
+w._cold_run_next_step = lambda: skip_next.append(w._cold_step_index)
+try:
+    before_skip = w._cold_step_index
+    w._control_skip()
+finally:
+    w._cold_run_next_step = original_next
+assert skip_next == [before_skip + 1]
+
+orig_control_send = CCC.dcs_bios.send_dcs_bios
+orig_axis_send = CCC.send_axis_override
+orig_scale = CCC.CONTROL_TIME_SCALE
+mechanism_commands = []
+axis_commands = []
+
+def fake_control_send(identifier, value):
+    mechanism_commands.append((identifier, value))
+    if identifier == "PROBE_SW":
+        w.dcs_bios.latest["ext_refuel_probe"] = "1" if value == 0 else "0"
+    elif identifier == "HOOK_LEVER":
+        w.dcs_bios.latest["ext_hook"] = "1" if value == 0 else "0"
+    elif identifier == "LAUNCH_BAR_SW":
+        w.dcs_bios.latest["ext_launch_bar"] = "1" if value == 1 else "0"
+    elif identifier == "WING_FOLD_ROTATE":
+        if value == 0:
+            w.dcs_bios.latest["ext_wing_folding"] = "1"
+        elif value == 2:
+            w.dcs_bios.latest["ext_wing_folding"] = "0"
+    return True
+
+try:
+    CCC.CONTROL_TIME_SCALE = 0.01
+    CCC.dcs_bios.send_dcs_bios = fake_control_send
+    CCC.send_axis_override = lambda pitch=0, roll=0, rudder=0, **kwargs: axis_commands.append(
+        (pitch, roll, rudder, kwargs.get("label"), kwargs.get("duration_ms"))
+    ) or True
+    w.dcs_bios.latest.update({
+        "ext_refuel_probe": "0", "ext_hook": "0",
+        "ext_launch_bar": "0", "ext_wing_folding": "0",
+    })
+    w._cold_step_index = control_index
+    w._cold_state = "running"
+    w._cold_sequence_token += 1
+    w._cold_run_next_step()
+    w._cold_handle_click(CCC.P_CONTROL_RIGHT)
+    wait_ms(2500)
+    assert w._cold_control_phase == "done", (
+        w._cold_control_phase, w._cold_control_progress, w._cold_last_action, w._cold_step_detail,
+        mechanism_commands, axis_commands,
+    )
+    assert w._cold_control_progress == 100
+    assert w._cold_cells[P_START].isEnabled()
+    labels = [item[3] for item in axis_commands]
+    assert labels == [
+        "STICK FULL AFT", "STICK FULL AFT CENTER",
+        "STICK FULL FORWARD", "STICK FULL FORWARD CENTER",
+        "STICK FULL LEFT", "STICK FULL LEFT CENTER",
+        "STICK FULL RIGHT", "STICK FULL RIGHT CENTER",
+        "RUDDER FULL LEFT", "RUDDER FULL LEFT CENTER",
+        "RUDDER FULL RIGHT", "RUDDER FULL RIGHT CENTER", "FINAL CENTER",
+    ]
+    assert axis_commands[0][:3] == (CCC.PITCH_AFT, 0.0, 0.0)
+    assert axis_commands[2][:3] == (CCC.PITCH_FORWARD, 0.0, 0.0)
+    assert axis_commands[4][:3] == (0.0, CCC.ROLL_LEFT, 0.0)
+    assert axis_commands[6][:3] == (0.0, CCC.ROLL_RIGHT, 0.0)
+    assert axis_commands[8][:3] == (0.0, 0.0, CCC.RUDDER_LEFT)
+    assert axis_commands[10][:3] == (0.0, 0.0, CCC.RUDDER_RIGHT)
+    ids = [item[0] for item in mechanism_commands]
+    assert ids.index("PROBE_SW") < ids.index("HOOK_LEVER") < ids.index("LAUNCH_BAR_SW") < ids.index("WING_FOLD_PULL")
+
+    # ABORT zeroes progress, forces center, restores all captured initial states,
+    # and unlocks CONTINUE only after the restoration check finishes.
+    mechanism_commands.clear(); axis_commands.clear()
+    w.dcs_bios.latest.update({
+        "ext_refuel_probe": "0", "ext_hook": "0",
+        "ext_launch_bar": "0", "ext_wing_folding": "0",
+    })
+    w._cold_step_index = control_index
+    w._cold_state = "running"
+    w._cold_sequence_token += 1
+    w._cold_run_next_step()
+    w._cold_handle_click(CCC.P_CONTROL_RIGHT)
+    wait_ms(20)
+    w._cold_handle_click(CCC.P_CONTROL_LEFT)
+    wait_ms(300)
+    assert w._cold_control_phase == "aborted"
+    assert w._cold_control_progress == 0
+    assert axis_commands[-1][:4] == (0.0, 0.0, 0.0, "ABORT CENTER")
+    assert w._cold_cells[P_START].isEnabled()
+finally:
+    CCC.dcs_bios.send_dcs_bios = orig_control_send
+    CCC.send_axis_override = orig_axis_send
+    CCC.CONTROL_TIME_SCALE = orig_scale
+print("[3b] OPTIONAL CONTROL CHECK / PROGRESS / ABORT RESTORE OK")
+
 # FLAPS AUTO values and PB19's exactly-one-channel contract.
 flaps = w._cold_entries_from_config("apu_off_flaps_auto")
 assert flaps[-2] == {"id": "FLAP_SW", "value": 0, "delay_ms": 150}
@@ -228,6 +344,18 @@ assert payloads == [{
 }]
 lua = open("dcs_export/UFC_Keypad_CVTrim.lua", encoding="utf-8").read()
 assert "handle_set_command" in lua and "p.device:SetCommand(p.command, p.value)" in lua
+assert "handle_axis" in lua and "apply_axis_override" in lua
+axis_payloads = []
+orig_payload = CVA._send_bridge_payload
+CVA._send_bridge_payload = lambda payload: axis_payloads.append(payload) or True
+try:
+    assert CVA.send_axis_override(1.0, -1.0, 0.5, duration_ms=3000, label="AXIS TEST")
+finally:
+    CVA._send_bridge_payload = orig_payload
+assert axis_payloads == [{
+    "type": "axis", "pitch": 1.0, "roll": -1.0, "rudder": 0.5,
+    "duration_ms": 3000, "label": "AXIS TEST",
+}]
 print("[4] FLAPS / PB19 / SAI CHANNELS OK")
 
 orig_send = MSA.dcs_bios.send_dcs_bios

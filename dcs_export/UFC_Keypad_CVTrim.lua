@@ -23,6 +23,7 @@ UFC_CVTRIM.last_command = 'none'
 UFC_CVTRIM.scan_from = nil
 UFC_CVTRIM.scan_to = nil
 UFC_CVTRIM.param_probe = ''
+UFC_CVTRIM.axis_override = nil
 
 local function now_time()
     return LoGetModelTime and LoGetModelTime() or socket.gettime()
@@ -93,6 +94,13 @@ local function get_cockpit_params()
     if not list_cockpit_params then return nil end
     local ok, params = pcall(list_cockpit_params)
     if ok and type(params) == 'string' then return params end
+    return nil
+end
+
+local function external_arg(arg)
+    if not LoGetAircraftDrawArgumentValue then return nil end
+    local ok, value = pcall(LoGetAircraftDrawArgumentValue, arg)
+    if ok and type(value) == 'number' then return value end
     return nil
 end
 
@@ -178,6 +186,13 @@ local function append_probe_args(parts)
     table.insert(parts, json_number('hmd_brt_arg_136', cockpit_arg(136)))
     table.insert(parts, json_number('radalt_min_arg_287', cockpit_arg(287)))
     table.insert(parts, json_number('radalt_off_arg_288', cockpit_arg(288)))
+    table.insert(parts, json_number('control_pitch_arg_395', cockpit_arg(395)))
+    table.insert(parts, json_number('control_roll_arg_396', cockpit_arg(396)))
+    table.insert(parts, json_number('control_rudder_arg_500', cockpit_arg(500)))
+    table.insert(parts, json_number('ext_refuel_probe', external_arg(22)))
+    table.insert(parts, json_number('ext_hook', external_arg(25)))
+    table.insert(parts, json_number('ext_launch_bar', external_arg(85)))
+    table.insert(parts, json_number('ext_wing_folding', external_arg(8)))
     -- Candidate stabilator / trim draw args. probe_hornet_bridge.py will show which one moves.
     for _, arg in ipairs({15, 16, 17, 18, 345, 346, 500, 501, 502, 503}) do
         table.insert(parts, json_number('trim_arg_' .. tostring(arg), cockpit_arg(arg)))
@@ -322,6 +337,26 @@ local function handle_set_command(msg)
     end
 end
 
+local function handle_axis(msg)
+    local pitch = json_number_value(msg, 'pitch') or 0.0
+    local roll = json_number_value(msg, 'roll') or 0.0
+    local rudder = json_number_value(msg, 'rudder') or 0.0
+    local duration_ms = json_number_value(msg, 'duration_ms') or 1000
+    local label = json_string(msg, 'label') or 'axis'
+    UFC_CVTRIM.axis_override = {
+        pitch = math.max(-1.0, math.min(1.0, pitch)),
+        roll = math.max(-1.0, math.min(1.0, roll)),
+        rudder = math.max(-1.0, math.min(1.0, rudder)),
+        until_time = now_time() + math.max(50, duration_ms) / 1000.0,
+        label = label,
+    }
+    UFC_CVTRIM.last_command = string.format(
+        'axis %s pitch=%.3f roll=%.3f rudder=%.3f duration=%d',
+        label, pitch, roll, rudder, duration_ms
+    )
+    log(UFC_CVTRIM.last_command)
+end
+
 local function handle_trim(msg)
     local direction = json_string(msg, 'direction')
     if direction ~= 'up' and direction ~= 'down' then return end
@@ -414,6 +449,8 @@ local function handle_command(msg)
         handle_clickable(msg)
     elseif typ == 'set_command' then
         handle_set_command(msg)
+    elseif typ == 'axis' then
+        handle_axis(msg)
     elseif typ == 'trim' then
         handle_trim(msg)
     elseif typ == 'ping' then
@@ -425,6 +462,32 @@ local function handle_command(msg)
     else
         log('unknown command: ' .. tostring(msg))
     end
+end
+
+local function apply_axis_override()
+    local axis = UFC_CVTRIM.axis_override
+    if not axis or not LoSetCommand then return end
+    local pitch_cmd = rawget(_G, 'iCommandPlanePitch')
+    local roll_cmd = rawget(_G, 'iCommandPlaneRoll')
+    local rudder_cmd = rawget(_G, 'iCommandPlaneRudder')
+    if not pitch_cmd or not roll_cmd or not rudder_cmd then
+        UFC_CVTRIM.last_command = 'axis failed: command constants unavailable'
+        log(UFC_CVTRIM.last_command)
+        UFC_CVTRIM.axis_override = nil
+        return
+    end
+    if now_time() >= axis.until_time then
+        LoSetCommand(pitch_cmd, 0.0)
+        LoSetCommand(roll_cmd, 0.0)
+        LoSetCommand(rudder_cmd, 0.0)
+        UFC_CVTRIM.last_command = 'axis watchdog neutral ' .. tostring(axis.label)
+        log(UFC_CVTRIM.last_command)
+        UFC_CVTRIM.axis_override = nil
+        return
+    end
+    LoSetCommand(pitch_cmd, axis.pitch)
+    LoSetCommand(roll_cmd, axis.roll)
+    LoSetCommand(rudder_cmd, axis.rudder)
 end
 
 local function poll_commands()
@@ -460,6 +523,7 @@ LuaExportAfterNextFrame = function()
     if prev_after_next_frame then prev_after_next_frame() end
     poll_commands()
     release_pending()
+    apply_axis_override()
     local now = now_time()
     if now - UFC_CVTRIM.last_send >= UFC_CVTRIM.send_interval then
         UFC_CVTRIM.last_send = now

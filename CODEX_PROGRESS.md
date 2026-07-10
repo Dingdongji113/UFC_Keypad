@@ -14,10 +14,10 @@
 - Corrected APU ON from invalid DCS-BIOS state 3 to state 1 and added direct device 12/command 3001 fallback; live argument 375 changed from 0 to 1.
 - A three-second hold on cockpit command 3001 was proven ineffective. The live-verified fix uses device 12 command 3023 (`APU_ControlSw_TM_WARTHOG`): value 1 latched argument 375 at 1.0 and value 0 released it.
 - Corrected ALR-67 POWER as a latching control: it is now set to 1 without an immediate release, with direct device 53/command 3001 fallback; live argument 277 latched at 1 and power light 276 illuminated.
-- Step 15 now closes the canopy and enables OBOGS.
-- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 20 sets RADAR OPR plus LAND/CV INS and waits for START; step 21 presses/releases AMPCD PB19 and waits for START again. The fixed ten-second delay between them was removed.
-- HMD calibration/INS IFA is now LAND step 26 and CV step 27, using DAY/NIGHT-dependent HMD brightness.
-- Step 13 combines APU OFF with FLAPS AUTO using DCS-BIOS state 0 and local input value 1.0.
+- Step 16 now closes the canopy and enables OBOGS.
+- The former combined RADAR/INS/PB19 step is now split into two confirmed steps: step 21 sets RADAR OPR plus LAND/CV INS and waits for CONTINUE; step 22 presses/releases AMPCD PB19 and waits for CONTINUE again. The fixed ten-second delay between them was removed.
+- HMD calibration/INS IFA is now LAND step 27 and CV step 28, using DAY/NIGHT-dependent HMD brightness.
+- Step 14 combines APU OFF with FLAPS AUTO using DCS-BIOS state 0 and local input value 1.0.
 - New step 12 runs after both engines are stable. DAY sets STROBE BRIGHT only; NIGHT additionally sets LDG/TAXI ON, formation/position and core interior dimmers to 70%, and cockpit mode NITE. It asks for FLOOD and CHART choices with matching UFC touch controls. The exterior master switch is untouched; anti-skid is ON for LAND and OFF for CV.
 - HMD setup sets INS IFA, waits ten seconds, then presses RDDI OSB18, OSB18, OSB3, and OSB20 strictly in order with three seconds between completed presses.
 - Each HMD RDDI OSB uses one 200 ms DCS-BIOS press/release. Export bridge is fallback-only and is never sent simultaneously, preventing accidental double presses.
@@ -99,8 +99,8 @@ history. The direct-touch implementation below replaces its targets and loops.
 
 ## Post-engine lighting and anti-skid
 
-- Added `LIGHTS / ANTI-SKID` immediately after both engines are stable. LAND now
-  has 27 steps and CV has 28.
+- Added `LIGHTS / ANTI-SKID` immediately after both engines are stable. With the
+  later optional CONTROL CHECK step, LAND now has 28 steps and CV has 29.
 - DAY sends only STROBE BRIGHT plus the profile anti-skid state, so it does not
   switch on any interior lights. NIGHT sets LDG/TAXI ON, STROBE BRIGHT,
   formation/position and console/instrument/warn-caution brightness to 70%, and
@@ -117,3 +117,17 @@ history. The direct-touch implementation below replaces its targets and loops.
   The main action button now reads CONFIRM during initial setup, START on
   checklist step 1, CONTINUE from step 2 onward, and COMPLETE at the end; all
   four labels are covered by font-width regression checks.
+
+## Optional automated control check
+
+- Added step 13 immediately after lighting. SKIP advances without commands;
+  EXECUTE runs the complete check, while ABORT restores the captured initial
+  probe/hook/launch-bar/wing states and forces pitch, roll, and rudder neutral.
+- Probe extend, hook down, and launch bar down each start a five-second timer at
+  command transmission, then receive their restore command. Wing position is
+  reversed for 12 seconds and returned to its captured initial state.
+- After mechanism feedback confirms restoration, the program waits five seconds,
+  then holds aft/forward/left/right stick for three seconds each and left/right
+  rudder for five seconds each, centering between every movement.
+- A UFC-style progress bar animates throughout. CONTINUE is disabled until 100%,
+  or until ABORT restoration finishes with the progress reset to zero.

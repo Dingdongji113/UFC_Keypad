@@ -56,20 +56,21 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 
 ## 当前冷启动清单
 
-- LAND：27 步。
-- CV：28 步，其中第 26 步为自动 CAT TRIM。
+- LAND：28 步。
+- CV：29 步，其中第 27 步为自动 CAT TRIM。
 - 第 12 步 `LIGHTS / ANTI-SKID`：双发稳定后自动配置灯光和防滑，且不操作外部总灯光开关。DAY 仅将频闪灯置于 BRIGHT；NIGHT 还打开着陆/滑行灯，将编队灯、航行灯、控制台、仪表板和告警/注意灯设为约 70%，机内灯光模式置于 NITE，并以 UFC 风格依次询问是否启用 70% 泛光灯和航图灯。LAND 防滑 ON，CV 防滑 OFF。
-- 第 15 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
+- 第 13 步 `CONTROL CHECK`：可选择 SKIP 或 EXECUTE。执行时依次检查受油管、阻拦钩、弹射杆、机翼折叠和三轴全行程；全程显示进度条，100% 后才开放 CONTINUE。ABORT 将进度清零、强制三轴回中并恢复四个机构的初始状态。
+- 第 16 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
 - APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
-- 第 18 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
-- 第 13 步 `APU OFF / FLAPS AUTO`：关闭 APU，并将襟翼开关置于 AUTO。
-- 第 20 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
-- 第 21 步 `AMPCD PB19`：仅通过 DCS-BIOS 按下并释放一次 PB19，随后等待人工确认；不再同时发送 Export bridge，避免双击。
-- 第 22 步 `SAI UNLOCK`：程序使用专用 CCW 输入旋转解锁备用姿态仪，不调整小飞机标线，等待用户确认。
-- 第 23 步 `RADALT MIN`：中央只显示座舱真实值；触控 −/+ 每次直接减/增一档，长按 250 ms 后约每 100 ms 连续调节，START 只确认并进入下一步。
-- 第 24 步 `BINGO FUEL`：中央只显示 IFEI 真实值；触控 −/+ 每次直接减/增 100 lb，长按重复，START 只确认并进入下一步。
-- LAND/CV 第 25 步为 `LOCAL ICP`；CV 第 26 步为自动 `CAT TRIM`。
-- LAND 第 26 步、CV 第 27 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
+- 第 19 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
+- 第 14 步 `APU OFF / FLAPS AUTO`：关闭 APU，并将襟翼开关置于 AUTO。
+- 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
+- 第 22 步 `AMPCD PB19`：仅通过 DCS-BIOS 按下并释放一次 PB19，随后等待人工确认；不再同时发送 Export bridge，避免双击。
+- 第 23 步 `SAI UNLOCK`：程序使用专用 CCW 输入旋转解锁备用姿态仪，不调整小飞机标线，等待用户确认。
+- 第 24 步 `RADALT MIN`：中央只显示座舱真实值；触控 −/+ 每次直接减/增一档，长按 250 ms 后约每 100 ms 连续调节，CONTINUE 只确认并进入下一步。
+- 第 25 步 `BINGO FUEL`：中央只显示 IFEI 真实值；触控 −/+ 每次直接减/增 100 lb，长按重复，CONTINUE 只确认并进入下一步。
+- LAND/CV 第 26 步为 `LOCAL ICP`；CV 第 27 步为自动 `CAT TRIM`。
+- LAND 第 27 步、CV 第 28 步 `HMD CAL / IFA`：按 DAY/NIGHT 设置 HMD 亮度并将 INS 转 IFA；等待 10 秒后执行 RDDI OSB 序列，最后等待用户手动校准确认。
 - HMD 打开后严格按 `RDDI OSB18 → OSB18 → OSB3 → OSB20` 执行，每次按键完成后等待 3 秒。
 - 主操作按钮在初始 DAY/NIGHT、LAND/CV 选择阶段显示 `CONFIRM`；清单第 1 步显示 `START`，从第 2 步起显示 `CONTINUE`，完成后显示 `COMPLETE`。
 
@@ -122,7 +123,7 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 - PyQt6
 - Windows (原生触控钩子仅 Windows 有效)
 
-## Steps 22–24 direct touch setup
+## Steps 23–25 direct touch setup
 
 The former MANUAL SETUP step is split into three confirmed steps. SAI uses the
 input-only `SAI_Rotate_EXT` command through the Export bridge's `SetCommand`
