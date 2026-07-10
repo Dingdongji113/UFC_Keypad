@@ -128,8 +128,17 @@ history. The direct-touch implementation below replaces its targets and loops.
   reversed for 20 seconds and returned to its captured initial state. Live
   testing showed that spread wings require UNFOLD, a HOLD dwell, handle push-in,
   and an explicit return to the locked rotation indication.
+- Live axis calibration confirmed simulator commands 2001/2002/2003. Pitch +/−
+  produces aft/forward, roll −/+ produces left/right, and rudder −/+ produces
+  left/right. Observable cockpit feedback is on arguments 71/74/500.
 - After mechanism feedback confirms restoration, the program waits five seconds,
   then holds aft/forward/left/right stick for three seconds each and left/right
   rudder for five seconds each, centering between every movement.
 - A UFC-style progress bar animates throughout. CONTINUE is disabled until 100%,
   or until ABORT restoration finishes with the progress reset to zero.
+### Live CONTROL CHECK validation (2026-07-10)
+
+- Verified the complete production CONTROL CHECK state machine against a running ramp-ready DCS session.
+- Confirmed command order and feedback for probe, hook, launch bar, wing fold/unfold, full aft/forward/left/right stick, and full left/right rudder; the run reached 100% and issued FINAL CENTER.
+- Live wing feedback exposed an early-unfold completion threshold: `ext_wing_folding=0.234` satisfied the old generic `<=0.25` test and caused HOLD before the spread stop. Wing feedback now uses strict end-stop thresholds (`<=0.02` spread, `>=0.98` folded).
+- A focused live retest then confirmed: folded feedback reached `1.0` after the 20-second fold interval; unfold continued to `0.020` before HOLD; the handle was pushed in and returned to LOCK; final spread feedback remained at `0.013`.

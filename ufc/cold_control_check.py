@@ -234,7 +234,15 @@ def install_cold_control_check(UFCKeypadWindowClass) -> None:
             if not self._control_context_valid(generation) or getattr(self, "_cold_control_phase", "") != "running":
                 return
             value = self._control_feedback(key)
-            reached = value is not None and ((value >= 0.75) if target else (value <= 0.25))
+            # Wing-fold position is a continuously moving exterior argument.
+            # The generic 25/75-percent switch thresholds are suitable for the
+            # other mechanisms, but they used to stop an unfolding wing at
+            # 0.234 and put the handle in HOLD before the wing reached its
+            # spread stop.  Require the actual end position before latching it.
+            if key == "ext_wing_folding":
+                reached = value is not None and ((value >= 0.98) if target else (value <= 0.02))
+            else:
+                reached = value is not None and ((value >= 0.75) if target else (value <= 0.25))
             if reached:
                 success()
                 return
