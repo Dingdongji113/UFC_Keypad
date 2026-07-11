@@ -113,6 +113,7 @@ def main():
         from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
         from ufc.radar_ins_steps import install_radar_ins_step_split
         from ufc.manual_setup_auto import install_manual_setup_automation
+        from ufc.cold_prompt_polish import install_cold_prompt_polish
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
@@ -123,6 +124,7 @@ def main():
         install_hmd_osb_timing_fix(UFCKeypadWindow)
         install_radar_ins_step_split(UFCKeypadWindow)
         install_manual_setup_automation(UFCKeypadWindow)
+        install_cold_prompt_polish(UFCKeypadWindow)
 
         app = QApplication(sys.argv)
         app.setStyle("Fusion")
