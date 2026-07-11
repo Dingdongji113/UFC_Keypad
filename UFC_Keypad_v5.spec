@@ -40,6 +40,7 @@ a = Analysis(
         'ufc.manual_setup_auto',
         'ufc.cold_lighting_auto',
         'ufc.cold_control_check',
+        'ufc.cold_prompt_polish',
         'ufc.ui',
     ],
     hookspath=[],
