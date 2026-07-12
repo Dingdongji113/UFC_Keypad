@@ -41,6 +41,7 @@ a = Analysis(
         'ufc.cold_lighting_auto',
         'ufc.cold_control_check',
         'ufc.startup_rpm_guard',
+        'ufc.light_flash_modes',
         'ufc.cold_prompt_polish',
         'ufc.ui',
     ],
