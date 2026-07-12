@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Two-stage CV launch trim controller.
 
-Large errors use a long trim hold for rapid travel.  Once the stabilator is close
+Large errors use a long trim hold for rapid travel. Once the stabilator is close
 to the target, the controller switches to short pulses and requires two fresh
 telemetry samples inside tolerance before advancing the cold-start checklist.
 """
@@ -28,7 +28,7 @@ TRIM_CONFIRM_SAMPLES = 2
 
 
 def cv_trim_control_phase(error_deg: float) -> Tuple[str, int]:
-    """Return (phase, pulse_ms) for the current absolute trim error."""
+    """Return ``(phase, pulse_ms)`` for the current trim error."""
     magnitude = abs(float(error_deg))
     if magnitude <= TRIM_TOLERANCE_DEG:
         return "verify", 0
@@ -77,6 +77,7 @@ def install_cv_trim_two_stage(UFCKeypadWindowClass) -> None:
             deadline = float(not_before) + TRIM_SAMPLE_WAIT_MS / 1000.0
 
             def _poll() -> None:
+                nonlocal deadline
                 if not _context_valid():
                     return
                 snap = self._cv_trim_snapshot()
@@ -85,12 +86,16 @@ def install_cv_trim_two_stage(UFCKeypadWindowClass) -> None:
                 if now >= not_before and fresh:
                     _tick()
                     return
-                if now >= deadline:
-                    # Re-enter the main loop even when no packet arrived.  It will
-                    # either keep waiting for a genuinely new confirmation sample
-                    # or fall back once telemetry age exceeds the existing 2 s limit.
+
+                age = time.time() - snap.timestamp if snap.timestamp else 999.0
+                if age > 2.0:
+                    # Re-enter the main loop only to trigger the established
+                    # missing-telemetry fallback. Never command from stale data.
                     _tick()
                     return
+
+                if now >= deadline:
+                    deadline = now + TRIM_SAMPLE_WAIT_MS / 1000.0
                 QTimer.singleShot(TRIM_SAMPLE_POLL_MS, _poll)
 
             QTimer.singleShot(TRIM_SAMPLE_POLL_MS, _poll)
@@ -165,7 +170,7 @@ def install_cv_trim_two_stage(UFCKeypadWindowClass) -> None:
             )
 
             # Do not issue another command until the current hold has released and
-            # at least one newer telemetry packet is available.  This avoids
+            # at least one newer telemetry packet is available. This avoids
             # overlapping the Lua bridge's single pending trim release.
             not_before = time.monotonic() + pulse_ms / 1000.0
             _wait_for_fresh_sample(snap.timestamp, not_before)
