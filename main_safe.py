@@ -114,6 +114,7 @@ def main():
         from ufc.radar_ins_steps import install_radar_ins_step_split
         from ufc.manual_setup_auto import install_manual_setup_automation
         from ufc.startup_rpm_guard import install_startup_rpm_guard
+        from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
@@ -126,6 +127,7 @@ def main():
         install_radar_ins_step_split(UFCKeypadWindow)
         install_manual_setup_automation(UFCKeypadWindow)
         install_startup_rpm_guard(UFCKeypadWindow)
+        install_light_flash_modes(UFCKeypadWindow)
         install_cold_prompt_polish(UFCKeypadWindow)
 
         app = QApplication(sys.argv)
