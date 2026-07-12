@@ -35,6 +35,8 @@ a = Analysis(
         'ufc.cold_ui_fixups',
         'ufc.cv_trim_auto',
         'ufc.cv_trim_two_stage',
+        'ufc.weight_trim',
+        'ufc.asymmetric_launch_trim',
         'ufc.direct_command_fixups',
         'ufc.hmd_osb_timing',
         'ufc.radar_ins_steps',
