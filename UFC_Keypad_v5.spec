@@ -2,7 +2,7 @@
 # 模块化版打包 spec：入口 main.py，自动收集 ufc/ 包
 from pathlib import Path
 
-spec_dir = Path(__file__).resolve().parent
+spec_dir = Path(SPECPATH).resolve()
 
 
 a = Analysis(
@@ -46,6 +46,10 @@ a = Analysis(
         'ufc.startup_rpm_guard',
         'ufc.light_flash_modes',
         'ufc.cold_prompt_polish',
+        'ufc.system4_mapping',
+        'ufc.system4_widgets',
+        'ufc.system4_safety',
+        'ufc.system4',
         'ufc.ui',
     ],
     hookspath=[],

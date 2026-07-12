@@ -7,6 +7,7 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **LOCAL ICP**：完整 UFC 布局，点击/触控输出键位，实时显示座舱数据
 - **MORSE LIGHT**：字母+小键盘，输入文本经编队灯输出莫尔斯码
 - **LIGHT CONTROL**：着陆/滑行灯、编队灯、航线灯、频闪灯手动控制 + 预设
+- **SYSTEM 4**：双子页 HUD/AMPCD 与 EW/JETT 控制；包含真实反馈、回中开关、长按与武装保护
 - **SYSTEM SELECT**：页面切换中枢
 - **可选启动动画**：打开面板后显示启动覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
   - `UFC BIT（军机自检风格）`：黑底绿字、BIT 自检、BUS SCAN
@@ -59,11 +60,11 @@ DCS 端日志位于 `Saved Games\DCS*\Logs\UFC_Keypad_CVTrim.log`。若报告显
 - LAND：28 步。
 - CV：29 步，其中第 27 步为自动 CAT TRIM。
 - 第 12 步 `LIGHTS / ANTI-SKID`：双发稳定后自动配置灯光和防滑，且不操作外部总灯光开关。DAY 仅将频闪灯置于 BRIGHT；NIGHT 还打开着陆/滑行灯，将编队灯、航行灯、控制台、仪表板和告警/注意灯设为约 70%，机内灯光模式置于 NITE，并以 UFC 风格依次询问是否启用 70% 泛光灯和航图灯。LAND 防滑 ON，CV 防滑 OFF。
-- 第 13 步 `CONTROL CHECK`：可选择 SKIP 或 EXECUTE。执行时依次检查受油管、阻拦钩、弹射杆、机翼折叠和三轴全行程；机翼在相反状态保持 20 秒，展开恢复时执行 UNFOLD → HOLD → 压入 → LOCK。全程显示进度条，100% 后才开放 CONTINUE。ABORT 将进度清零、强制三轴回中并恢复四个机构的初始状态。
-- 第 16 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
+- 第 17 步 `CONTROL CHECK`：在 BLEED AIR 后可选择 SKIP 或 EXECUTE。执行时依次检查受油管、阻拦钩、弹射杆、机翼折叠和三轴全行程；机翼在相反状态保持 20 秒，展开恢复时执行 UNFOLD → HOLD → 压入 → LOCK。全程显示进度条，100% 后才开放 CONTINUE。ABORT 将进度清零、强制三轴回中并恢复四个机构的初始状态。
+- 第 15 步 `CANOPY / OXYGEN`：关闭座舱盖并打开 OBOGS。
 - APU START/OFF 使用本机已验证的保持式硬件输入命令 3023，避免普通命令 3001 推上后失效。
 - 第 19 步 `FCS / RWR`：执行 FCS RESET，并将 ALR-67 POWER 保持在 ON。
-- 第 14 步 `APU OFF / FLAPS AUTO`：关闭 APU，并将襟翼开关置于 AUTO。
+- 第 13 步 `APU OFF / FLAPS AUTO`：关闭 APU，并将襟翼开关置于 AUTO。
 - 第 21 步 `RADAR / INS`：雷达转 OPR、INS 转 LAND/CV 对应位置，随后停下等待人工确认。
 - 第 22 步 `AMPCD PB19`：仅通过 DCS-BIOS 按下并释放一次 PB19，随后等待人工确认；不再同时发送 Export bridge，避免双击。
 - 第 23 步 `SAI UNLOCK`：程序使用专用 CCW 输入旋转解锁备用姿态仪，不调整小飞机标线，等待用户确认。
@@ -114,6 +115,10 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 | `dcs_bios.py`  | DCS-BIOS UDP 解析器、接收线程、指令发送 |
 | `input.py`     | 原生触控钩子 + 键位注入 (SendInput/PostMessage) |
 | `widgets.py`   | `UFCCell` / `UFCBlank` 自定义控件 |
+| `system4_mapping.py` | SYSTEM 4 控件、DCS-BIOS 与反馈地址映射 |
+| `system4_widgets.py` | 两/三档开关、回中开关、旋钮、按钮和长按控件 |
+| `system4_safety.py` | AUX REL、ECM JETT 与 EMER JETT 安全状态机 |
+| `system4.py` | SYSTEM 4A/4B 页面、反馈轮询与主窗口接入 |
 | `startup.py`   | 可选启动动画覆盖层与设置面板附加项 |
 | `ui.py`        | `UFCKeypadWindow` 主面板 + `SettingsWindow` 设置窗口 |
 | `main.py`      | 仓库根目录入口，创建 QApplication 与主窗口 |

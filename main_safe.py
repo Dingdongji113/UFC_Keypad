@@ -117,6 +117,7 @@ def main():
         from ufc.startup_rpm_guard import install_startup_rpm_guard
         from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
+        from ufc.system4 import install_system4
         patch_settings_window_apply_screen(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
@@ -131,6 +132,7 @@ def main():
         install_startup_rpm_guard(UFCKeypadWindow)
         install_light_flash_modes(UFCKeypadWindow)
         install_cold_prompt_polish(UFCKeypadWindow)
+        install_system4(UFCKeypadWindow)
 
         app = QApplication(sys.argv)
         app.setStyle("Fusion")

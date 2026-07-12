@@ -19,9 +19,12 @@ modules = [
     "ufc/input.py", "ufc/widgets.py", "ufc/startup.py", "ufc/windowing.py",
     "ufc/ifei_rpm.py", "ufc/realtime_rpm.py", "ufc/cold_start.py",
     "ufc/cold_direct_entry.py", "ufc/cold_setup_split.py", "ufc/cold_ui_fixups.py",
-    "ufc/cv_trim_auto.py", "ufc/direct_command_fixups.py", "ufc/hmd_osb_timing.py",
+    "ufc/cv_trim_auto.py", "ufc/cv_trim_two_stage.py", "ufc/weight_trim.py",
+    "ufc/asymmetric_launch_trim.py", "ufc/direct_command_fixups.py", "ufc/hmd_osb_timing.py",
     "ufc/radar_ins_steps.py", "ufc/manual_setup_auto.py", "ufc/cold_lighting_auto.py",
-    "ufc/cold_control_check.py", "ufc/ui.py",
+    "ufc/cold_control_check.py", "ufc/startup_rpm_guard.py", "ufc/light_flash_modes.py",
+    "ufc/cold_prompt_polish.py", "ufc/system4_mapping.py", "ufc/system4_widgets.py",
+    "ufc/system4_safety.py", "ufc/system4.py", "ufc/ui.py",
 ]
 for path in modules:
     py_compile.compile(path, doraise=True)
@@ -29,8 +32,11 @@ for name in [
     "constants", "crashlog", "config", "fonts", "morse", "colors", "dcs_bios",
     "input", "widgets", "startup", "windowing", "ifei_rpm", "realtime_rpm",
     "cold_start", "cold_direct_entry", "cold_setup_split", "cold_ui_fixups",
-    "cv_trim_auto", "direct_command_fixups", "hmd_osb_timing", "radar_ins_steps",
-    "manual_setup_auto", "cold_lighting_auto", "cold_control_check", "ui",
+    "cv_trim_auto", "cv_trim_two_stage", "weight_trim", "asymmetric_launch_trim",
+    "direct_command_fixups", "hmd_osb_timing", "radar_ins_steps",
+    "manual_setup_auto", "cold_lighting_auto", "cold_control_check", "startup_rpm_guard",
+    "light_flash_modes", "cold_prompt_polish", "system4_mapping",
+    "system4_widgets", "system4_safety", "system4", "ui",
 ]:
     importlib.import_module("ufc." + name)
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
@@ -47,17 +53,24 @@ from ufc.cold_direct_entry import P_START
 from ufc.cold_setup_split import install_split_land_cv_setup
 from ufc.cold_ui_fixups import install_cold_ui_fixups
 from ufc.cv_trim_auto import install_cv_trim_automation
+from ufc.cv_trim_two_stage import install_cv_trim_two_stage
 from ufc.direct_command_fixups import install_direct_command_fixups
 from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
 from ufc.radar_ins_steps import install_radar_ins_step_split
 from ufc.manual_setup_auto import install_manual_setup_automation
 from ufc.cold_lighting_auto import install_cold_lighting_automation
 from ufc.cold_control_check import install_cold_control_check
+from ufc.startup_rpm_guard import install_startup_rpm_guard
+from ufc.light_flash_modes import install_light_flash_modes
+from ufc.cold_prompt_polish import install_cold_prompt_polish
+from ufc.system4 import install_system4
 import ufc.cv_trim_auto as CVA
 import ufc.dcs_bios as DB
 import ufc.manual_setup_auto as MSA
 import ufc.cold_lighting_auto as CLA
 import ufc.cold_control_check as CCC
+import ufc.system4 as S4
+from ufc.system4_mapping import AMPCD_BOTTOM_LEFT_TO_RIGHT, CONTROLS
 import ufc.ui as UI
 
 
@@ -75,12 +88,17 @@ install_cold_direct_entry(UFCKeypadWindow)
 install_split_land_cv_setup(UFCKeypadWindow)
 install_cold_ui_fixups(UFCKeypadWindow)
 install_cv_trim_automation(UFCKeypadWindow)
+install_cv_trim_two_stage(UFCKeypadWindow)
 install_direct_command_fixups(UFCKeypadWindow)
 install_hmd_osb_timing_fix(UFCKeypadWindow)
 install_radar_ins_step_split(UFCKeypadWindow)
 install_manual_setup_automation(UFCKeypadWindow)
 install_cold_lighting_automation(UFCKeypadWindow)
 install_cold_control_check(UFCKeypadWindow)
+install_startup_rpm_guard(UFCKeypadWindow)
+install_light_flash_modes(UFCKeypadWindow)
+install_cold_prompt_polish(UFCKeypadWindow)
+install_system4(UFCKeypadWindow)
 CVA._RECEIVER.start = cv_receiver_start
 
 # Do not attach hooks or UDP listeners to a concurrently running DCS session.
@@ -539,6 +557,118 @@ assert sent == [
 ]
 assert w._cold_state == "wait_user"
 print("[6] HMD ORDER OK")
+
+# SYSTEM 4 page registration, mapping, feedback and safety contracts.
+assert "SYSTEM 4" in w._select_cells[(201, 3)].label.text()
+assert len(w._system4_controls) == 32
+assert AMPCD_BOTTOM_LEFT_TO_RIGHT == (15, 14, 13, 12, 11)
+w._show_page("select")
+w.on_cell_click((201, 3))
+assert w._current_page == S4.PAGE_4A
+assert not w._system4_controls["hud_rej"].isHidden()
+w._show_page(S4.PAGE_4B)
+assert not w._system4_controls["ecm_mode"].isHidden()
+
+s4_sent = []
+orig_s4_send = S4.dcs_bios.send_dcs_bios
+S4.dcs_bios.send_dcs_bios = lambda ident, value: s4_sent.append((ident, value)) or True
+w._system4_feedback_timer.stop()
+w._dcs_disconnected = False
+w._system4_safety.set_connected(True)
+try:
+    # Stable controls enter only declared detents.
+    w._system4_controls["hud_rej"].select_index(2)
+    assert s4_sent[-1] == ("HUD_SYM_REJ_SW", 2)
+    w._system4_controls["ecm_mode"].set_state_index(0)
+    w._system4_controls["ecm_mode"].step(1)
+    assert w._system4_controls["ecm_mode"].current_index == 1
+    assert s4_sent[-1] == ("ECM_MODE_SW", 1)
+
+    # Spring controls return to center; rockers send DEC/INC only.
+    s4_sent.clear()
+    spring = w._system4_controls["ampcd_sym"]
+    spring._press(-1); spring._release()
+    assert s4_sent == [("AMPCD_SYM_SW", 0), ("AMPCD_SYM_SW", 1)]
+    s4_sent.clear()
+    rocker = w._system4_controls["hdg"]
+    rocker._press(-1); rocker._release(); rocker._press(1); rocker._release()
+    assert s4_sent == [("LEFT_DDI_HDG_SW", "DEC"), ("LEFT_DDI_HDG_SW", "INC")]
+
+    # Ordinary buttons pulse, while ALR-67 POWER never sends a release/off.
+    s4_sent.clear()
+    w._system4_controls["pb15"].button.click()
+    assert s4_sent == [("AMPCD_PB_15", 1), ("AMPCD_PB_15", 0)]
+    s4_sent.clear()
+    w._system4_controls["rwr_power"].button.click()
+    assert s4_sent == [("RWR_POWER_BTN", 1)]
+
+    # Analog controls support step and repeat, with real feedback displayed.
+    s4_sent.clear()
+    knob = w._system4_controls["hud_brt"]
+    knob._start(1); knob.stop_repeat(); knob.set_feedback(0.52)
+    assert s4_sent == [("HUD_SYM_BRT", "INC")]
+    assert knob.value_label.text() == "52%"
+
+    # AUX ENABLE needs two selections; NORM is immediate.
+    s4_sent.clear()
+    aux = w._system4_controls["aux_rel"]
+    aux.select_index(1)
+    assert s4_sent == [] and w._system4_safety.aux_pending and aux.current_index == 0
+    aux.select_index(1)
+    assert s4_sent == [("AUX_REL_SW", 1)] and not w._system4_safety.aux_pending
+    aux.select_index(0)
+    assert s4_sent[-1] == ("AUX_REL_SW", 0)
+
+    # Short clicks cannot fire guarded jettison controls.
+    s4_sent.clear()
+    w._system4_ecm_hold.button.click()
+    w._system4_emer_hold.button.click()
+    assert s4_sent == []
+    assert not w._system4_safety.execute_emergency()
+    assert s4_sent == []
+
+    # Completed ECM hold pulses once. EMER additionally requires ARM.
+    w._system4_ecm_hold.begin_hold()
+    w._system4_ecm_hold._started -= 2.0
+    w._system4_ecm_hold._tick()
+    wait_ms(w._system4_safety.PULSE_MS + 20)
+    assert s4_sent[-2:] == [("CMSD_JET_SEL_BTN", 1), ("CMSD_JET_SEL_BTN", 0)]
+    s4_sent.clear()
+    assert w._system4_safety.arm_emergency()
+    w._system4_emer_hold.begin_hold()
+    w._system4_emer_hold._started -= 2.0
+    w._system4_emer_hold._tick()
+    wait_ms(w._system4_safety.PULSE_MS + 20)
+    assert s4_sent == [("EMER_JETT_BTN", 1), ("EMER_JETT_BTN", 0)]
+    assert not w._system4_safety.emer_armed
+
+    # Feedback is read directly from the DCS-BIOS memory map, including
+    # multiple bit fields sharing one 16-bit address.
+    parser_state = w.dcs_bios.parser.state
+    raw_742c = (2 << 9) | (1 << 11) | (1 << 14)
+    parser_state[0x742C] = raw_742c & 0xFF
+    parser_state[0x742D] = raw_742c >> 8
+    parser_state[0x7458] = 0xFF; parser_state[0x7459] = 0x7F
+    raw_7498 = (1 << 12) | (1 << 15)
+    parser_state[0x7498] = raw_7498 & 0xFF; parser_state[0x7499] = raw_7498 >> 8
+    w._system4_poll_feedback()
+    assert w._system4_controls["hud_rej"].current_index == 2
+    assert w._system4_controls["hud_mode"].current_index == 1
+    assert w._system4_controls["hud_alt"].current_index == 1
+    assert w._system4_controls["rwr_power"].lamp_on
+    assert w._system4_controls["rwr_special"].lamp_on
+
+    # Page changes and disconnects disarm every pending action.
+    assert w._system4_safety.arm_emergency()
+    w._show_page(S4.PAGE_4A)
+    assert not w._system4_safety.emer_armed
+    w._system4_safety.request_aux(True)
+    w._dcs_disconnected = True
+    w._system4_poll_feedback()
+    assert not w._system4_safety.aux_pending and not w._system4_safety.emer_armed
+finally:
+    S4.dcs_bios.send_dcs_bios = orig_s4_send
+print("[7] SYSTEM 4 MAPPING / FEEDBACK / SAFETY OK")
 
 # Closing the window while held must invalidate every pending repeat callback.
 w._show_page("cold_start")

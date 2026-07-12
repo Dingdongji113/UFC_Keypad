@@ -97,6 +97,7 @@ def main():
         from ufc.startup_rpm_guard import install_startup_rpm_guard
         from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
+        from ufc.system4 import install_system4
         install_ifei_rpm_fallback()
         install_realtime_rpm_callbacks()
         patch_settings_window_apply_screen(SettingsWindow)
@@ -115,6 +116,7 @@ def main():
         install_startup_rpm_guard(UFCKeypadWindow)
         install_light_flash_modes(UFCKeypadWindow)
         install_cold_prompt_polish(UFCKeypadWindow)
+        install_system4(UFCKeypadWindow)
         _bootstrap_log("startup/ui/windowing/cold_start modules imported")
 
         _bootstrap_log("creating QApplication")

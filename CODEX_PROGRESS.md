@@ -120,7 +120,7 @@ history. The direct-touch implementation below replaces its targets and loops.
 
 ## Optional automated control check
 
-- Added step 13 immediately after lighting. SKIP advances without commands;
+- Added CONTROL CHECK after BLEED AIR. SKIP advances without commands;
   EXECUTE runs the complete check, while ABORT restores the captured initial
   probe/hook/launch-bar/wing states and forces pitch, roll, and rudder neutral.
 - Probe extend, hook down, and launch bar down each start a five-second timer at
