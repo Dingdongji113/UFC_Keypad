@@ -94,6 +94,7 @@ def main():
         from ufc.cold_lighting_auto import install_cold_lighting_automation
         from ufc.cold_control_check import install_cold_control_check
         from ufc.startup_rpm_guard import install_startup_rpm_guard
+        from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
         install_ifei_rpm_fallback()
         install_realtime_rpm_callbacks()
@@ -110,6 +111,7 @@ def main():
         install_cold_lighting_automation(UFCKeypadWindow)
         install_cold_control_check(UFCKeypadWindow)
         install_startup_rpm_guard(UFCKeypadWindow)
+        install_light_flash_modes(UFCKeypadWindow)
         install_cold_prompt_polish(UFCKeypadWindow)
         _bootstrap_log("startup/ui/windowing/cold_start modules imported")
 
