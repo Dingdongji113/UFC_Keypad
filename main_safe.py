@@ -109,6 +109,7 @@ def main():
         from ufc.cold_setup_split import install_split_land_cv_setup
         from ufc.cold_ui_fixups import install_cold_ui_fixups
         from ufc.cv_trim_auto import install_cv_trim_automation
+        from ufc.cv_trim_two_stage import install_cv_trim_two_stage
         from ufc.direct_command_fixups import install_direct_command_fixups
         from ufc.hmd_osb_timing import install_hmd_osb_timing_fix
         from ufc.radar_ins_steps import install_radar_ins_step_split
@@ -122,6 +123,7 @@ def main():
         install_split_land_cv_setup(UFCKeypadWindow)
         install_cold_ui_fixups(UFCKeypadWindow)
         install_cv_trim_automation(UFCKeypadWindow)
+        install_cv_trim_two_stage(UFCKeypadWindow)
         install_direct_command_fixups(UFCKeypadWindow)
         install_hmd_osb_timing_fix(UFCKeypadWindow)
         install_radar_ins_step_split(UFCKeypadWindow)
