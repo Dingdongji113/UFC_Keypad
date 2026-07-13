@@ -7,13 +7,14 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **LOCAL ICP**：完整 UFC 布局，点击/触控输出键位，实时显示座舱数据
 - **MORSE LIGHT**：字母+小键盘，输入文本经编队灯输出莫尔斯码
 - **LIGHT CONTROL**：着陆/滑行灯、编队灯、航线灯、频闪灯手动控制 + 预设
-- **SYSTEM 4**：双子页 HUD/AMPCD 与 EW/JETT 控制；包含真实反馈、回中开关、长按与武装保护
+- **SYSTEM 4**：双子页 HUD/AMPCD 与 EW/JETT 控制；全部操作件直接处理原生触摸，包含真实反馈、回中开关、长按与武装保护
 - **SYSTEM SELECT**：页面切换中枢
 - **可选启动动画**：打开面板后显示启动覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
   - `UFC BIT（军机自检风格）`：黑底绿字、BIT 自检、BUS SCAN
   - `千禧日式动画风格`：架空千禧日本动画风格终端、蓝黑 HUD、日文状态字
 - DCS-BIOS 双向同步：接收 `239.255.50.10:5010/UDP`，发送 `127.0.0.1:7778/UDP`
 - Windows 原生触控隔离（WH_MOUSE_LL 钩子 + RegisterTouchWindow）
+- SYSTEM 4 不依赖触摸转鼠标；触摸移出或取消会立即释放，鼠标仅作为兼容输入保留
 
 ## DCS-BIOS 通信端口
 

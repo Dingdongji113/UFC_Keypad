@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Callable, Iterable, Optional
 
-from PyQt6.QtCore import QPoint, Qt, QTimer
+from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPolygon
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget,
@@ -18,6 +18,72 @@ GREY = "#53615a"
 BG = "#030705"
 AMBER = "#d89a28"
 RED = "#cf3434"
+
+
+class TouchButton(QPushButton):
+    """QPushButton with a native-touch-first press lifecycle.
+
+    The panel registers for native Windows touch, so SYSTEM 4 cannot depend on
+    Windows synthesizing mouse events.  Accepting the touch here also prevents
+    Qt from generating a second mouse click after the explicit touch action.
+    """
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        self._touch_active = False
+        self._touch_cancelled = False
+
+    def _touch_inside(self, event) -> bool:
+        try:
+            points = event.points()
+            if points:
+                return self.rect().contains(points[0].position().toPoint())
+        except (AttributeError, IndexError, TypeError):
+            pass
+        return True
+
+    def _release_touch(self, *, click: bool) -> None:
+        if not self._touch_active:
+            return
+        self._touch_active = False
+        self.setDown(False)
+        self.released.emit()
+        if click and self.isEnabled():
+            if self.isCheckable():
+                self.toggle()
+            self.clicked.emit(self.isChecked())
+
+    def event(self, event) -> bool:
+        event_type = event.type()
+        if event_type == QEvent.Type.TouchBegin:
+            if not self.isEnabled() or self._touch_active:
+                event.accept()
+                return True
+            self._touch_active = True
+            self._touch_cancelled = False
+            self.setDown(True)
+            self.pressed.emit()
+            event.accept()
+            return True
+        if event_type == QEvent.Type.TouchUpdate and self._touch_active:
+            if not self._touch_inside(event):
+                self._touch_cancelled = True
+                self._release_touch(click=False)
+            event.accept()
+            return True
+        if event_type == QEvent.Type.TouchEnd:
+            click = self._touch_active and not self._touch_cancelled and self._touch_inside(event)
+            self._release_touch(click=click)
+            self._touch_cancelled = False
+            event.accept()
+            return True
+        if event_type == QEvent.Type.TouchCancel:
+            self._touch_cancelled = True
+            self._release_touch(click=False)
+            self._touch_cancelled = False
+            event.accept()
+            return True
+        return super().event(event)
 
 
 CONTROL_STYLE = f"""
@@ -81,8 +147,8 @@ class AvionicsControl(QFrame):
         self._layout.setSpacing(3)
         self._layout.addWidget(self._title)
 
-    def _button(self, text: str, checkable: bool = False) -> QPushButton:
-        button = QPushButton(text, self)
+    def _button(self, text: str, checkable: bool = False) -> TouchButton:
+        button = TouchButton(text, self)
         button.setCheckable(checkable)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setMinimumSize(34, 28)
@@ -121,6 +187,7 @@ class StableToggle(AvionicsControl):
         if not 0 <= index < len(self.values):
             return
         if index == getattr(self, "current_index", None):
+            self.set_state_index(index)
             return
         self.set_state_index(index)
         self.sender(self.values[index])
@@ -149,6 +216,7 @@ class TwoPositionToggle(StableToggle):
         if not 0 <= index < len(self.values):
             return
         if index == getattr(self, "current_index", None):
+            self.set_state_index(index)
             return
         self.set_state_index(index)
         self.sender("TOGGLE" if self.use_toggle else self.values[index])

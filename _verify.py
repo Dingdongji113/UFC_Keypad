@@ -41,7 +41,7 @@ for name in [
     importlib.import_module("ufc." + name)
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
 
-from PyQt6.QtCore import QEventLoop, QTimer
+from PyQt6.QtCore import QEvent, QEventLoop, Qt, QTimer
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
@@ -71,6 +71,7 @@ import ufc.cold_lighting_auto as CLA
 import ufc.cold_control_check as CCC
 import ufc.system4 as S4
 from ufc.system4_mapping import AMPCD_BOTTOM_LEFT_TO_RIGHT, CONTROLS
+from ufc.system4_widgets import TouchButton
 import ufc.ui as UI
 
 
@@ -78,6 +79,19 @@ def wait_ms(milliseconds):
     loop = QEventLoop()
     QTimer.singleShot(milliseconds, loop.quit)
     loop.exec()
+
+
+class FakeTouchEvent:
+    """Minimal native-touch event used to verify the explicit button path."""
+    def __init__(self, event_type):
+        self._event_type = event_type
+        self.accepted = False
+
+    def type(self):
+        return self._event_type
+
+    def accept(self):
+        self.accepted = True
 
 
 app = QApplication.instance() or QApplication(sys.argv)
@@ -607,6 +621,49 @@ try:
     s4_sent.clear()
     w._system4_controls["rwr_power"].button.click()
     assert s4_sent == [("RWR_POWER_BTN", 1)]
+
+    # Native touch owns the full press lifecycle. It must not depend on a
+    # synthesized mouse event, and every SYSTEM 4 button must use it.
+    system4_buttons = []
+    for control in w._system4_controls.values():
+        system4_buttons.extend(control.findChildren(TouchButton))
+    system4_buttons.extend([
+        child for child in w.findChildren(TouchButton)
+        if getattr(child, "_page", None) in S4.SYSTEM4_PAGES
+    ])
+    assert system4_buttons and all(
+        button.testAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
+        for button in system4_buttons
+    )
+    s4_sent.clear()
+    touch_button = w._system4_controls["pb15"].button
+    begin = FakeTouchEvent(QEvent.Type.TouchBegin)
+    end = FakeTouchEvent(QEvent.Type.TouchEnd)
+    assert touch_button.event(begin) and begin.accepted
+    assert s4_sent == [("AMPCD_PB_15", 1)]
+    assert touch_button.event(end) and end.accepted
+    assert s4_sent == [("AMPCD_PB_15", 1), ("AMPCD_PB_15", 0)]
+    s4_sent.clear()
+    power_button = w._system4_controls["rwr_power"].button
+    power_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
+    power_button.event(FakeTouchEvent(QEvent.Type.TouchEnd))
+    assert s4_sent == [("RWR_POWER_BTN", 1)]
+    s4_sent.clear()
+    alt_control = w._system4_controls["hud_alt"]
+    alt_control.set_state_index(0)
+    alt_button = alt_control.buttons[1]
+    alt_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
+    alt_button.event(FakeTouchEvent(QEvent.Type.TouchEnd))
+    assert s4_sent == [("HUD_ALT_SW", "TOGGLE")] and alt_control.current_index == 1
+    s4_sent.clear()
+    alt_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
+    alt_button.event(FakeTouchEvent(QEvent.Type.TouchEnd))
+    assert s4_sent == [] and alt_button.isChecked()
+    s4_sent.clear()
+    held_button = w._system4_ecm_hold.button
+    held_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
+    held_button.event(FakeTouchEvent(QEvent.Type.TouchCancel))
+    assert s4_sent == [] and not held_button._touch_active
 
     # Analog controls support step and repeat, with real feedback displayed.
     s4_sent.clear()

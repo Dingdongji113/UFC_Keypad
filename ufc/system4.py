@@ -7,7 +7,7 @@ from typing import Callable
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QFrame, QLabel, QPushButton
+from PyQt6.QtWidgets import QFrame, QLabel
 
 import ufc.dcs_bios as dcs_bios
 from ufc.system4_mapping import (
@@ -17,7 +17,7 @@ from ufc.system4_mapping import (
 from ufc.system4_safety import System4Safety
 from ufc.system4_widgets import (
     AnalogKnob, CutCornerFrame, DetentRotary, GuardedHoldButton, PushButton,
-    SpringThreePositionToggle, ThreePositionToggle, TwoPositionToggle,
+    SpringThreePositionToggle, ThreePositionToggle, TouchButton, TwoPositionToggle,
 )
 
 
@@ -105,13 +105,13 @@ def install_system4(UFCKeypadWindowClass) -> None:
         return control
 
     def _system4_make_header(self, page: str, title: str):
-        back = QPushButton("SYSTEMS", self)
+        back = TouchButton("SYSTEMS", self)
         back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         back.setStyleSheet(TAB_STYLE)
         back.clicked.connect(lambda: self._show_page("select"))
         self._system4_register(back, 8, 7, 130, 50, page, 10)
-        tab_a = QPushButton("HUD / AMPCD", self)
-        tab_b = QPushButton("EW / JETT", self)
+        tab_a = TouchButton("HUD / AMPCD", self)
+        tab_b = TouchButton("EW / JETT", self)
         for tab in (tab_a, tab_b):
             tab.setCheckable(True)
             tab.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -256,7 +256,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
             "aux_rel", TwoPositionToggle("AUX REL", spec.labels, spec.values, aux_select, self),
             (680, 285, 324, 140), PAGE_4B,
         )
-        arm = QPushButton("ARM", self)
+        arm = TouchButton("ARM", self)
         arm.setCheckable(True)
         arm.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         arm.setStyleSheet(
