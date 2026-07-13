@@ -39,7 +39,8 @@ ALR-67 lamp feedback comes from arguments 276, 274, 271/270, 268, and 265. Exact
 - DCS-BIOS potentiometers are driven with 16-bit absolute values. A short press changes the value by approximately 5%, and a hold repeats that step while feedback keeps the percentage synchronized.
 - AMPCD lower-bezel controls are intentionally not exposed in SYSTEM 4. Only the left-DDI HDG and CRS rockers remain in the lower navigation row.
 - HDG and CRS are DCS-BIOS `defineRockerSwitch` controls: touch-left sends `0`, release sends `1`, touch-right sends `2`, and release sends `1` again. Feedback shares address `0x74A8` with masks `0x1800` and `0x6000`.
-- ALR-67 follows the physical left-to-right order `BIT`, `OFFSET`, `SPECIAL`, `DISPLAY`, `POWER`.
+- ALR-67 follows the physical left-to-right order `BIT`, `OFFSET`, `SPECIAL`, `DISPLAY`, `POWER`. Its touch faces also show the cockpit legends `FAIL`, `ENABLE`, and `LIMIT` instead of using anonymous lamp boxes.
+- ALR-67 POWER is a feedback-aware latching control: when the POWER lamp is dark it sends `1`, and when illuminated it sends `0`, so the same large touch control turns the unit both on and off.
 - ECM mode raw detents are OFF=0, STBY=1, BIT=2, REC=3, XMIT=4. The DCS keyboard mapping independently confirms cockpit values 0.0 through 0.4.
 - DISPENSER raw detents are OFF=0, ON=1, BYPASS=2. The DCS keyboard mapping confirms cockpit values 0.0, 0.1, and 0.2.
 - AUX REL is NORM=0 and ENABLE=1.

@@ -620,13 +620,21 @@ try:
         ("LEFT_DDI_HDG_SW", 2), ("LEFT_DDI_HDG_SW", 1),
     ]
 
-    # Ordinary buttons pulse, while ALR-67 POWER never sends a release/off.
+    # Ordinary buttons pulse; ALR-67 POWER toggles its latched 0/1 state.
     s4_sent.clear()
     w._system4_controls["rwr_display"].button.click()
     assert s4_sent == [("RWR_DISPLAY_BTN", 1), ("RWR_DISPLAY_BTN", 0)]
     s4_sent.clear()
-    w._system4_controls["rwr_power"].button.click()
-    assert s4_sent == [("RWR_POWER_BTN", 1)]
+    power = w._system4_controls["rwr_power"]
+    power.set_feedback(0)
+    power.button.click()
+    power.button.click()
+    assert s4_sent == [("RWR_POWER_BTN", 1), ("RWR_POWER_BTN", 0)]
+    assert power.button.text() == "POWER"
+    assert w._system4_controls["rwr_display"].button.text() == "LIMIT\nDISPLAY"
+    assert w._system4_controls["rwr_special"].button.text() == "SPECIAL\nENABLE"
+    assert w._system4_controls["rwr_offset"].button.text() == "OFFSET\nENABLE"
+    assert w._system4_controls["rwr_bit"].button.text() == "BIT\nFAIL"
 
     # Native touch owns the full press lifecycle. It must not depend on a
     # synthesized mouse event, and every SYSTEM 4 button must use it.
@@ -654,6 +662,7 @@ try:
     assert s4_sent == [("RWR_DISPLAY_BTN", 1), ("RWR_DISPLAY_BTN", 0)]
     s4_sent.clear()
     power_button = w._system4_controls["rwr_power"].button
+    w._system4_controls["rwr_power"].set_feedback(0)
     power_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
     power_button.event(FakeTouchEvent(QEvent.Type.TouchEnd))
     assert s4_sent == [("RWR_POWER_BTN", 1)]

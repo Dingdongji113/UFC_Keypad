@@ -68,8 +68,8 @@ def install_system4(UFCKeypadWindowClass) -> None:
         frame = CutCornerFrame(danger=danger, parent=self)
         self._system4_register(frame, x, y, w, h, page, 0)
         color = "#cf3434" if danger else "#00e65c"
-        self._system4_label(title, x + 16, y - 1, min(w - 32, max(140, len(title) * 12)),
-                            24, page, 9, color)
+        self._system4_label(title, x + 16, y - 1, min(w - 32, max(160, len(title) * 14)),
+                            26, page, 11, color)
 
     def _system4_send(self, identifier: str, value) -> bool:
         ok = dcs_bios.send_dcs_bios(identifier, value)
@@ -97,7 +97,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
             arm.setChecked(safety.emer_armed)
             arm.setText("ARMED" if safety.emer_armed else "ARM")
 
-    def _system4_add_control(self, key: str, control, geometry, page: str, font=9):
+    def _system4_add_control(self, key: str, control, geometry, page: str, font=12):
         x, y, w, h = geometry
         self._system4_controls[key] = control
         self._system4_register(control, x, y, w, h, page, font)
@@ -108,7 +108,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         back.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         back.setStyleSheet(TAB_STYLE)
         back.clicked.connect(lambda: self._show_page("select"))
-        self._system4_register(back, 8, 7, 130, 50, page, 10)
+        self._system4_register(back, 8, 7, 130, 50, page, 12)
         tab_a = TouchButton("HUD / NAV", self)
         tab_b = TouchButton("EW / JETT", self)
         for tab in (tab_a, tab_b):
@@ -119,10 +119,10 @@ def install_system4(UFCKeypadWindowClass) -> None:
         tab_b.setChecked(page == PAGE_4B)
         tab_a.clicked.connect(lambda: self._show_page(PAGE_4A))
         tab_b.clicked.connect(lambda: self._show_page(PAGE_4B))
-        self._system4_register(tab_a, 150, 7, 190, 50, page, 10)
-        self._system4_register(tab_b, 350, 7, 190, 50, page, 10)
-        self._system4_label(title, 550, 7, 466, 28, page, 12)
-        status = self._system4_label("DCS DISCONNECTED", 550, 34, 466, 23, page, 8, "#d89a28")
+        self._system4_register(tab_a, 150, 7, 190, 50, page, 12)
+        self._system4_register(tab_b, 350, 7, 190, 50, page, 12)
+        self._system4_label(title, 550, 7, 466, 28, page, 14)
+        status = self._system4_label("DCS DISCONNECTED", 550, 34, 466, 23, page, 10, "#d89a28")
         self._system4_status_labels[page] = status
 
     def _system4_outer_frame(self, page: str):
@@ -199,16 +199,16 @@ def install_system4(UFCKeypadWindowClass) -> None:
         self._system4_section("ECM / CMDS", 8, 265, 650, 170, PAGE_4B)
         self._system4_section("RELEASE", 668, 265, 348, 170, PAGE_4B)
         self._system4_section("JETTISON", 8, 442, 1008, 145, PAGE_4B, True)
-        for key, title, geom, press_only in (
-            ("rwr_bit", "BIT", (20, 98, 188, 145), False),
-            ("rwr_offset", "OFFSET", (218, 98, 188, 145), False),
-            ("rwr_special", "SPECIAL", (416, 98, 188, 145), False),
-            ("rwr_display", "DISPLAY", (614, 98, 188, 145), False),
-            ("rwr_power", "POWER", (812, 98, 194, 145), True),
+        for key, title, button_text, geom, latching in (
+            ("rwr_bit", "BIT / FAIL", "BIT\nFAIL", (20, 98, 188, 145), False),
+            ("rwr_offset", "OFFSET / ENABLE", "OFFSET\nENABLE", (218, 98, 188, 145), False),
+            ("rwr_special", "SPECIAL / ENABLE", "SPECIAL\nENABLE", (416, 98, 188, 145), False),
+            ("rwr_display", "LIMIT / DISPLAY", "LIMIT\nDISPLAY", (614, 98, 188, 145), False),
+            ("rwr_power", "POWER", "POWER", (812, 98, 194, 145), True),
         ):
             self._system4_add_control(
-                key, PushButton(title, self._system4_sender(key), press_only=press_only,
-                                show_lamp=True, parent=self),
+                key, PushButton(title, self._system4_sender(key), latching=latching,
+                                show_lamp=True, button_text=button_text, parent=self),
                 geom, PAGE_4B,
             )
         spec = CONTROLS["ecm_mode"]
@@ -327,7 +327,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         previous_rescale(self, win_w, win_h)
         scale = min(win_w / self.DESIGN_W, win_h / self.DESIGN_H)
         for control in getattr(self, "_system4_controls", {}).values():
-            control.rescale_font(max(6, round(9 * scale)))
+            control.rescale_font(max(10, round(12 * scale)))
 
     def _cold_reset_session_state(self, reason=""):
         if hasattr(self, "_system4_safety"):

@@ -138,10 +138,10 @@ class AvionicsControl(QFrame):
         super().__init__(parent)
         self.setProperty("system4Control", True)
         self.setStyleSheet(CONTROL_STYLE)
-        self._base_font = 10
+        self._base_font = 12
         self._title = QLabel(title, self)
         self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._title.setFont(QFont("B612", 9, QFont.Weight.Bold))
+        self._title.setFont(QFont("B612", 11, QFont.Weight.Bold))
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(4, 3, 4, 4)
         self._layout.setSpacing(3)
@@ -366,14 +366,17 @@ class DetentRotary(StableToggle):
 
 class PushButton(AvionicsControl):
     def __init__(self, title: str, sender: Callable[[object], None], *, press_only=False,
-                 show_lamp=False, parent=None):
+                 latching=False, show_lamp=False, button_text=None, parent=None):
         super().__init__(title, parent)
         self.sender = sender
         self.press_only = bool(press_only)
-        self.button = self._button(title)
-        self.lamp = QLabel("", self)
+        self.latching = bool(latching)
+        self.lamp_on = False
+        self.button = self._button(button_text or title, self.latching)
+        self.lamp = QLabel("OFF", self)
         self.lamp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lamp.setFixedSize(12, 18)
+        self.lamp.setMinimumSize(46, 30)
+        self.lamp.setFont(QFont("B612", 10, QFont.Weight.Bold))
         self.lamp.setStyleSheet("background:#18221b; border:1px solid #304036;")
         row = QHBoxLayout()
         row.addWidget(self.button, 5)
@@ -382,11 +385,19 @@ class PushButton(AvionicsControl):
         else:
             self.lamp.hide()
         self._layout.addLayout(row, 1)
-        if self.press_only:
+        if self.latching:
+            self.button.clicked.connect(self._toggle_latched)
+        elif self.press_only:
             self.button.clicked.connect(lambda: self.sender(1))
         else:
             self.button.pressed.connect(lambda: self.sender(1))
             self.button.released.connect(lambda: self.sender(0))
+
+    def _toggle_latched(self) -> None:
+        target = 0 if self.lamp_on else 1
+        self.sender(target)
+        # Keep touch feedback responsive while the next DCS-BIOS frame arrives.
+        self.set_feedback(target)
 
     def set_feedback(self, value) -> None:
         try:
@@ -396,6 +407,9 @@ class PushButton(AvionicsControl):
         self.lamp.setStyleSheet(
             f"background:{GREEN if on else '#18221b'}; border:1px solid {GREEN_DIM if on else '#304036'};"
         )
+        self.lamp.setText("ON" if on else "OFF")
+        if self.latching:
+            self.button.setChecked(on)
         self.lamp_on = on
 
 
