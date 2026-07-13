@@ -52,7 +52,7 @@ class System4Safety(QObject):
         spec = CONTROLS["aux_rel"]
         if not enable:
             self._clear_aux()
-            ok = self._send(spec.identifier, 0)
+            ok = self._send(spec.identifier, "TOGGLE")
             self.status("AUX REL NORM" if ok else "AUX REL NORM FAILED")
             return ok
         if not self.connected:
@@ -64,7 +64,7 @@ class System4Safety(QObject):
             self.status("CONFIRM AUX REL ENABLE")
             return False
         self._clear_aux()
-        ok = self._send(spec.identifier, 1)
+        ok = self._send(spec.identifier, "TOGGLE")
         self.status("AUX REL ENABLE" if ok else "AUX REL ENABLE FAILED")
         return ok
 

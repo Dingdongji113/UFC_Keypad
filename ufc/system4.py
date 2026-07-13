@@ -158,9 +158,19 @@ def install_system4(UFCKeypadWindowClass) -> None:
             ("hud_video", ThreePositionToggle, (18, 248, 180, 95)),
         ):
             spec = CONTROLS[key]
+            if cls is TwoPositionToggle:
+                control = cls(
+                    key.replace("_", " ").upper(), spec.labels, spec.values,
+                    self._system4_sender(key), self,
+                    use_toggle=key in ("hud_mode", "hud_alt"),
+                )
+            else:
+                control = cls(
+                    key.replace("_", " ").upper(), spec.labels, spec.values,
+                    self._system4_sender(key), self,
+                )
             self._system4_add_control(
-                key, cls(key.replace("_", " ").upper(), spec.labels, spec.values,
-                         self._system4_sender(key), self), geom, PAGE_4A,
+                key, control, geom, PAGE_4A,
             )
         for key, title, geom in (
             ("hud_brt", "HUD BRT", (205, 248, 155, 95)),

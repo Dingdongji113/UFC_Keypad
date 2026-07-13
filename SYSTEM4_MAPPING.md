@@ -38,6 +38,8 @@ ALR-67 lamp feedback comes from arguments 276, 274, 271/270, 268, and 265. Exact
 
 ## Verified conventions
 
+- DCS-BIOS `defineToggleSwitch` controls (`HUD_SYM_BRT_SELECT`, `HUD_ALT_SW`, and `AUX_REL_SW`) are driven with `TOGGLE`; live feedback determines the visible detent and suppresses same-detent clicks.
+- DCS-BIOS potentiometers are driven with 16-bit absolute values. A short press changes the value by approximately 5%, and a hold repeats that step while feedback keeps the percentage synchronized.
 - AMPCD bottom bezel is rendered left-to-right as PB15, PB14, PB13, PB12, PB11. DCS clickable arguments 193 through 197 and commands 3021 through 3025 identify PB11 through PB15.
 - AMPCD HDG and CRS use DCS-BIOS rocker commands `DEC` on the left and `INC` on the right; the UI returns to center on release.
 - AMPCD SYM, CONT, and GAIN use states 0/1/2 and send state 1 on release.

@@ -579,6 +579,12 @@ try:
     # Stable controls enter only declared detents.
     w._system4_controls["hud_rej"].select_index(2)
     assert s4_sent[-1] == ("HUD_SYM_REJ_SW", 2)
+    w._system4_controls["hud_alt"].set_state_index(0)
+    w._system4_controls["hud_alt"].select_index(1)
+    assert s4_sent[-1] == ("HUD_ALT_SW", "TOGGLE")
+    count_after_toggle = len(s4_sent)
+    w._system4_controls["hud_alt"].select_index(1)
+    assert len(s4_sent) == count_after_toggle
     w._system4_controls["ecm_mode"].set_state_index(0)
     w._system4_controls["ecm_mode"].step(1)
     assert w._system4_controls["ecm_mode"].current_index == 1
@@ -605,8 +611,8 @@ try:
     # Analog controls support step and repeat, with real feedback displayed.
     s4_sent.clear()
     knob = w._system4_controls["hud_brt"]
-    knob._start(1); knob.stop_repeat(); knob.set_feedback(0.52)
-    assert s4_sent == [("HUD_SYM_BRT", "INC")]
+    knob.set_feedback(0.50); knob._start(1); knob.stop_repeat(); knob.set_feedback(0.52)
+    assert s4_sent == [("HUD_SYM_BRT", 36045)]
     assert knob.value_label.text() == "52%"
 
     # AUX ENABLE needs two selections; NORM is immediate.
@@ -615,9 +621,9 @@ try:
     aux.select_index(1)
     assert s4_sent == [] and w._system4_safety.aux_pending and aux.current_index == 0
     aux.select_index(1)
-    assert s4_sent == [("AUX_REL_SW", 1)] and not w._system4_safety.aux_pending
+    assert s4_sent == [("AUX_REL_SW", "TOGGLE")] and not w._system4_safety.aux_pending
     aux.select_index(0)
-    assert s4_sent[-1] == ("AUX_REL_SW", 0)
+    assert s4_sent[-1] == ("AUX_REL_SW", "TOGGLE")
 
     # Short clicks cannot fire guarded jettison controls.
     s4_sent.clear()

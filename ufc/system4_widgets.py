@@ -120,6 +120,8 @@ class StableToggle(AvionicsControl):
     def select_index(self, index: int) -> None:
         if not 0 <= index < len(self.values):
             return
+        if index == getattr(self, "current_index", None):
+            return
         self.set_state_index(index)
         self.sender(self.values[index])
 
@@ -137,7 +139,19 @@ class StableToggle(AvionicsControl):
 
 
 class TwoPositionToggle(StableToggle):
-    pass
+    """Two-position selector with optional DCS-BIOS toggle semantics."""
+    def __init__(self, title: str, labels: Iterable[str], values: Iterable[object],
+                 sender: Callable[[object], None], parent=None, *, use_toggle=False):
+        self.use_toggle = bool(use_toggle)
+        super().__init__(title, labels, values, sender, parent)
+
+    def select_index(self, index: int) -> None:
+        if not 0 <= index < len(self.values):
+            return
+        if index == getattr(self, "current_index", None):
+            return
+        self.set_state_index(index)
+        self.sender("TOGGLE" if self.use_toggle else self.values[index])
 
 
 class ThreePositionToggle(StableToggle):
@@ -188,6 +202,8 @@ class SpringThreePositionToggle(AvionicsControl):
 class AnalogKnob(AvionicsControl):
     REPEAT_DELAY_MS = 360
     REPEAT_INTERVAL_MS = 110
+    RAW_MAX = 65535
+    STEP_RAW = 3277  # approximately 5 percent per click
 
     def __init__(self, title: str, sender: Callable[[object], None], parent=None):
         super().__init__(title, parent)
@@ -224,7 +240,11 @@ class AnalogKnob(AvionicsControl):
 
     def _send_repeat(self) -> None:
         if self._repeat_direction:
-            self.sender("DEC" if self._repeat_direction < 0 else "INC")
+            raw = round(self.value * self.RAW_MAX)
+            raw = max(0, min(self.RAW_MAX, raw + self._repeat_direction * self.STEP_RAW))
+            self.value = raw / self.RAW_MAX
+            self.value_label.setText(f"{round(self.value * 100):d}%")
+            self.sender(raw)
 
     def stop_repeat(self) -> None:
         self._repeat_direction = None
