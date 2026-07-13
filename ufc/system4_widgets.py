@@ -430,6 +430,17 @@ class Alr67Button(AvionicsControl):
         self.button = self._button("", self.latching)
         self.button.setMinimumSize(116, 116)
         self.button.setMaximumSize(126, 126)
+        self._legend_labels = {}
+        face_layout = QVBoxLayout(self.button)
+        face_layout.setContentsMargins(8, 8, 8, 8)
+        face_layout.setSpacing(0)
+        for field, _text in self.legends:
+            label = QLabel("", self.button)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            label.setFont(QFont("B612", self._base_font, QFont.Weight.Bold))
+            face_layout.addWidget(label, 1)
+            self._legend_labels[field] = label
         self._layout.addWidget(
             self.button, 1,
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
@@ -450,15 +461,21 @@ class Alr67Button(AvionicsControl):
         active = [text for field, text in self.legends if self._lamp_states.get(field, False)]
         failed = any(text == "FAIL" and self._lamp_states.get(field, False)
                      for field, text in self.legends)
-        self.button.setText("\n".join(active))
+        self.button.setText("")
+        for field, text in self.legends:
+            on = self._lamp_states.get(field, False)
+            label = self._legend_labels[field]
+            label.setText(text if on else "")
+            color = RED if text == "FAIL" else GREEN
+            label.setStyleSheet(f"color:{color if on else 'transparent'}; background:transparent; border:none;")
         if failed:
-            color, border, background = "#ff5757", "#cf3434", "#4b1010"
+            border, background = "#cf3434", "#100707"
         elif active:
-            color, border, background = "#effff4", GREEN, "#115b2e"
+            border, background = GREEN, "#07150d"
         else:
-            color, border, background = "transparent", GREEN_DIM, "#07100b"
+            border, background = GREEN_DIM, "#07100b"
         self.button.setStyleSheet(
-            f"QPushButton {{ color:{color}; background:{background}; border:3px solid {border}; padding:4px; }}"
+            f"QPushButton {{ color:transparent; background:{background}; border:3px solid {border}; padding:4px; }}"
             f"QPushButton:pressed {{ background:#123a22; border-color:{GREEN}; }}"
         )
         self.lamp_on = bool(self._lamp_states.get(self.primary_field, False))
@@ -476,6 +493,15 @@ class Alr67Button(AvionicsControl):
 
     def set_feedback(self, value) -> None:
         self.set_lamp_feedback(self.primary_field, value)
+
+    def legend_texts(self):
+        return tuple(self._legend_labels[field].text() for field, _text in self.legends)
+
+    def rescale_font(self, point_size: int) -> None:
+        super().rescale_font(point_size)
+        size = max(10, int(point_size))
+        for label in self._legend_labels.values():
+            label.setFont(QFont("B612", size, QFont.Weight.Bold))
 
 
 class GuardedHoldButton(AvionicsControl):

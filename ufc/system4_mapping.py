@@ -61,9 +61,9 @@ CONTROLS = {
     "hud_black": _m("HUD_BLACK_LVL", "analog", device=34, command=3004, argument=143, address=0x745A),
     "hud_balance": _m("HUD_BALANCE", "analog", device=34, command=3006, argument=145, address=0x745C),
     "hud_aoa": _m("HUD_AOA_INDEXER", "analog", device=34, command=3007, argument=146, address=0x745E),
-    # The installed metadata lists 1/OFF/2, but the live cockpit's physical
-    # left/right orientation is reversed on the touch panel.
-    "adf": _m("UFC_ADF", "stable3", ("2", "OFF", "1"), (0, 1, 2),
+    # Keep the cockpit's visible 1/OFF/2 order while reversing the two end
+    # command values to match the live touch-panel direction.
+    "adf": _m("UFC_ADF", "stable3", ("1", "OFF", "2"), (2, 1, 0),
               device=25, command=3016, argument=107, address=0x7416, mask=0x00C0, shift=6),
 
     # SYSTEM 4A - left DDI heading/course spring-loaded rockers. DCS-BIOS

@@ -25,11 +25,11 @@ PAGE_4B = "system4b"
 SYSTEM4_PAGES = (PAGE_4A, PAGE_4B)
 
 ALR67_LEGENDS = {
-    "rwr_bit": (("rwr_bit_lt", "BIT"), ("rwr_fail_lt", "FAIL")),
-    "rwr_offset": (("rwr_offset_lt", "OFFSET"), ("rwr_enable_lt", "ENABLE")),
-    "rwr_special": (("rwr_special_lt", "SPECIAL"), ("rwr_special_en_lt", "ENABLE")),
+    "rwr_bit": (("rwr_fail_lt", "FAIL"), ("rwr_bit_lt", "BIT")),
+    "rwr_offset": (("rwr_enable_lt", "ENABLE"), ("rwr_offset_lt", "OFFSET")),
+    "rwr_special": (("rwr_special_en_lt", "ENABLE"), ("rwr_special_lt", "SPECIAL")),
     "rwr_display": (("rwr_limit_lt", "LIMIT"), ("rwr_display_lt", "DISPLAY")),
-    "rwr_power": (("rwr_lower_lt", "POWER"),),
+    "rwr_power": (("rwr_lower_lt", "ON"),),
 }
 ALR67_FIELD_TO_CONTROL = {
     field: key for key, legends in ALR67_LEGENDS.items() for field, _text in legends

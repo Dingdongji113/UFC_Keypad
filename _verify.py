@@ -576,8 +576,8 @@ print("[6] HMD ORDER OK")
 assert "SYSTEM 4" in w._select_cells[(201, 3)].label.text()
 assert "HUD / NAV / EW" in w._select_cells[(201, 3)].label.text()
 assert len(w._system4_controls) == 22
-assert CONTROLS["adf"].labels == ("2", "OFF", "1")
-assert CONTROLS["adf"].values == (0, 1, 2)
+assert CONTROLS["adf"].labels == ("1", "OFF", "2")
+assert CONTROLS["adf"].values == (2, 1, 0)
 assert not ({"ampcd_brt", "ampcd_mode", "ampcd_sym", "ampcd_cont", "ampcd_gain",
              "pb11", "pb12", "pb13", "pb14", "pb15"} & set(w._system4_controls))
 assert (w._system4_controls["rwr_bit"].x()
@@ -622,6 +622,14 @@ try:
         ("LEFT_DDI_HDG_SW", 2), ("LEFT_DDI_HDG_SW", 1),
     ]
 
+    # ADF keeps the visible 1/OFF/2 order while reversing the end commands.
+    s4_sent.clear()
+    adf = w._system4_controls["adf"]
+    adf.set_state_index(1)
+    adf.buttons[0].click()
+    adf.buttons[2].click()
+    assert s4_sent == [("UFC_ADF", 2), ("UFC_ADF", 0)]
+
     # Ordinary buttons pulse; ALR-67 POWER toggles its latched 0/1 state.
     s4_sent.clear()
     w._system4_controls["rwr_display"].button.click()
@@ -635,7 +643,9 @@ try:
     assert power.button.text() == ""
     for key in ("rwr_display", "rwr_special", "rwr_offset", "rwr_bit"):
         assert w._system4_controls[key].button.text() == ""
+        assert w._system4_controls[key].legend_texts() == ("", "")
         assert w._system4_controls[key].button.minimumWidth() == w._system4_controls[key].button.minimumHeight()
+    assert power.legend_texts() == ("",)
 
     # Native touch owns the full press lifecycle. It must not depend on a
     # synthesized mouse event, and every SYSTEM 4 button must use it.
@@ -745,9 +755,13 @@ try:
     assert w._system4_controls["crs"].center.text() == "LEFT"
     assert w._system4_controls["rwr_power"].lamp_on
     assert not w._system4_controls["rwr_special"].lamp_on
-    assert w._system4_controls["rwr_power"].button.text() == "POWER"
-    assert w._system4_controls["rwr_display"].button.text() == "LIMIT\nDISPLAY"
-    assert w._system4_controls["rwr_special"].button.text() == "ENABLE"
+    assert w._system4_controls["rwr_power"].legend_texts() == ("ON",)
+    assert w._system4_controls["rwr_display"].legend_texts() == ("LIMIT", "DISPLAY")
+    assert w._system4_controls["rwr_special"].legend_texts() == ("ENABLE", "")
+    w._system4_apply_feedback("rwr_fail_lt", 1)
+    w._system4_apply_feedback("rwr_bit_lt", 1)
+    assert w._system4_controls["rwr_bit"].legend_texts() == ("FAIL", "BIT")
+    assert "#cf3434" in w._system4_controls["rwr_bit"].button.styleSheet()
 
     # Page changes and disconnects disarm every pending action.
     assert w._system4_safety.arm_emergency()
