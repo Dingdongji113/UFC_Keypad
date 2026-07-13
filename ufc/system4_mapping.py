@@ -64,25 +64,12 @@ CONTROLS = {
     "adf": _m("UFC_ADF", "stable3", ("1", "OFF", "2"), (0, 1, 2),
               device=25, command=3016, argument=107, address=0x7416, mask=0x00C0, shift=6),
 
-    # SYSTEM 4A - AMPCD. Bottom bezel is PB15..PB11 from left to right.
-    "ampcd_brt": _m("AMPCD_BRT_CTL", "analog", device=37, command=3001, argument=203, address=0x74E0),
-    "ampcd_mode": _m("AMPCD_NIGHT_DAY", "stable3", ("NGT", "AUTO", "DAY"), (0, 1, 2),
-                    device=37, command=3002, argument=177, address=0x7466, mask=0x6000, shift=13),
-    "ampcd_sym": _m("AMPCD_SYM_SW", "spring3", ("-", "CTR", "+"), (0, 1, 2),
-                   device=37, command=3004, argument=179, address=0x746C, mask=0x0300, shift=8),
-    "ampcd_cont": _m("AMPCD_CONT_SW", "spring3", ("-", "CTR", "+"), (0, 1, 2),
-                    device=37, command=3006, argument=182, address=0x746C, mask=0x0C00, shift=10),
-    "ampcd_gain": _m("AMPCD_GAIN_SW", "spring3", ("-", "CTR", "+"), (0, 1, 2),
-                    device=37, command=3008, argument=180, address=0x746C, mask=0x3000, shift=12),
-    "hdg": _m("LEFT_DDI_HDG_SW", "rocker", ("-", "CTR", "+"), ("DEC", None, "INC"),
-              device=35, command=3004, argument=312, feedback=None),
-    "crs": _m("LEFT_DDI_CRS_SW", "rocker", ("-", "CTR", "+"), ("DEC", None, "INC"),
-              device=35, command=3006, argument=313, feedback=None),
-    **{
-        f"pb{number}": _m(f"AMPCD_PB_{number}", "button", device=37,
-                           command=3010 + number, argument=182 + number, feedback=None)
-        for number in range(11, 16)
-    },
+    # SYSTEM 4A - left DDI heading/course spring-loaded rockers. DCS-BIOS
+    # defineRockerSwitch accepts held-left/center/held-right as 0/1/2.
+    "hdg": _m("LEFT_DDI_HDG_SW", "spring3", ("DEC", "CTR", "INC"), (0, 1, 2),
+              device=35, command=3004, argument=312, address=0x74A8, mask=0x1800, shift=11),
+    "crs": _m("LEFT_DDI_CRS_SW", "spring3", ("DEC", "CTR", "INC"), (0, 1, 2),
+              device=35, command=3006, argument=313, address=0x74A8, mask=0x6000, shift=13),
 
     # SYSTEM 4B - ALR-67
     "rwr_power": _m("RWR_POWER_BTN", "power_button", device=53, command=3001, argument=277,
@@ -117,9 +104,6 @@ FEEDBACK_FIELDS = {
     "rwr_offset_lt": (0x749C, 0x0400, 10),
     "rwr_bit_lt": (0x749C, 0x1000, 12),
 }
-
-
-AMPCD_BOTTOM_LEFT_TO_RIGHT = (15, 14, 13, 12, 11)
 
 
 def integer_feedback_fields():

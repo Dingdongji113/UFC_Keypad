@@ -23,9 +23,6 @@ The executable mapping is centralized in `ufc/system4_mapping.py`.
 | HUD altitude source | `HUD_ALT_SW` | 34 | 3008 | 147 |
 | HUD attitude source | `HUD_ATT_SW` | 34 | 3009 | 148 |
 | ADF | `UFC_ADF` | 25 | 3016 | 107 |
-| AMPCD brightness/mode | `AMPCD_BRT_CTL`, `AMPCD_NIGHT_DAY` | 37 | 3001, 3002 | 203, 177 |
-| AMPCD SYM/CONT/GAIN | `AMPCD_SYM_SW`, `AMPCD_CONT_SW`, `AMPCD_GAIN_SW` | 37 | 3004, 3006, 3008 | 179, 182, 180 |
-| AMPCD bottom PB11–15 | `AMPCD_PB_11` … `AMPCD_PB_15` | 37 | 3021–3025 | 193–197 |
 | HDG/CRS rockers | `LEFT_DDI_HDG_SW`, `LEFT_DDI_CRS_SW` | 35 | 3004/3005, 3006/3007 | 312, 313 |
 | ALR-67 buttons | `RWR_POWER_BTN` … `RWR_BIT_BTN` | 53 | 3001–3005 | 277, 275, 272, 269, 266 |
 | DISPENSER | `CMSD_DISPENSE_SW` | 54 | 3001 | 517 |
@@ -40,9 +37,9 @@ ALR-67 lamp feedback comes from arguments 276, 274, 271/270, 268, and 265. Exact
 
 - DCS-BIOS `defineToggleSwitch` controls (`HUD_SYM_BRT_SELECT`, `HUD_ALT_SW`, and `AUX_REL_SW`) are driven with `TOGGLE`; live feedback determines the visible detent and suppresses same-detent clicks.
 - DCS-BIOS potentiometers are driven with 16-bit absolute values. A short press changes the value by approximately 5%, and a hold repeats that step while feedback keeps the percentage synchronized.
-- AMPCD bottom bezel is rendered left-to-right as PB15, PB14, PB13, PB12, PB11. DCS clickable arguments 193 through 197 and commands 3021 through 3025 identify PB11 through PB15.
-- AMPCD HDG and CRS use DCS-BIOS rocker commands `DEC` on the left and `INC` on the right; the UI returns to center on release.
-- AMPCD SYM, CONT, and GAIN use states 0/1/2 and send state 1 on release.
+- AMPCD lower-bezel controls are intentionally not exposed in SYSTEM 4. Only the left-DDI HDG and CRS rockers remain in the lower navigation row.
+- HDG and CRS are DCS-BIOS `defineRockerSwitch` controls: touch-left sends `0`, release sends `1`, touch-right sends `2`, and release sends `1` again. Feedback shares address `0x74A8` with masks `0x1800` and `0x6000`.
+- ALR-67 follows the physical left-to-right order `BIT`, `OFFSET`, `SPECIAL`, `DISPLAY`, `POWER`.
 - ECM mode raw detents are OFF=0, STBY=1, BIT=2, REC=3, XMIT=4. The DCS keyboard mapping independently confirms cockpit values 0.0 through 0.4.
 - DISPENSER raw detents are OFF=0, ON=1, BYPASS=2. The DCS keyboard mapping confirms cockpit values 0.0, 0.1, and 0.2.
 - AUX REL is NORM=0 and ENABLE=1.

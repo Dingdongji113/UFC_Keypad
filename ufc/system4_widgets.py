@@ -151,7 +151,7 @@ class AvionicsControl(QFrame):
         button = TouchButton(text, self)
         button.setCheckable(checkable)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        button.setMinimumSize(34, 28)
+        button.setMinimumSize(56, 44)
         button.setFont(QFont("B612", self._base_font, QFont.Weight.Bold))
         return button
 

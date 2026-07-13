@@ -70,7 +70,7 @@ import ufc.manual_setup_auto as MSA
 import ufc.cold_lighting_auto as CLA
 import ufc.cold_control_check as CCC
 import ufc.system4 as S4
-from ufc.system4_mapping import AMPCD_BOTTOM_LEFT_TO_RIGHT, CONTROLS
+from ufc.system4_mapping import CONTROLS
 from ufc.system4_widgets import TouchButton
 import ufc.ui as UI
 
@@ -574,8 +574,15 @@ print("[6] HMD ORDER OK")
 
 # SYSTEM 4 page registration, mapping, feedback and safety contracts.
 assert "SYSTEM 4" in w._select_cells[(201, 3)].label.text()
-assert len(w._system4_controls) == 32
-assert AMPCD_BOTTOM_LEFT_TO_RIGHT == (15, 14, 13, 12, 11)
+assert "HUD / NAV / EW" in w._select_cells[(201, 3)].label.text()
+assert len(w._system4_controls) == 22
+assert not ({"ampcd_brt", "ampcd_mode", "ampcd_sym", "ampcd_cont", "ampcd_gain",
+             "pb11", "pb12", "pb13", "pb14", "pb15"} & set(w._system4_controls))
+assert (w._system4_controls["rwr_bit"].x()
+        < w._system4_controls["rwr_offset"].x()
+        < w._system4_controls["rwr_special"].x()
+        < w._system4_controls["rwr_display"].x()
+        < w._system4_controls["rwr_power"].x())
 w._show_page("select")
 w.on_cell_click((201, 3))
 assert w._current_page == S4.PAGE_4A
@@ -604,20 +611,19 @@ try:
     assert w._system4_controls["ecm_mode"].current_index == 1
     assert s4_sent[-1] == ("ECM_MODE_SW", 1)
 
-    # Spring controls return to center; rockers send DEC/INC only.
-    s4_sent.clear()
-    spring = w._system4_controls["ampcd_sym"]
-    spring._press(-1); spring._release()
-    assert s4_sent == [("AMPCD_SYM_SW", 0), ("AMPCD_SYM_SW", 1)]
+    # HDG/CRS are DCS-BIOS set-state rockers: 0/2 while held, 1 on release.
     s4_sent.clear()
     rocker = w._system4_controls["hdg"]
     rocker._press(-1); rocker._release(); rocker._press(1); rocker._release()
-    assert s4_sent == [("LEFT_DDI_HDG_SW", "DEC"), ("LEFT_DDI_HDG_SW", "INC")]
+    assert s4_sent == [
+        ("LEFT_DDI_HDG_SW", 0), ("LEFT_DDI_HDG_SW", 1),
+        ("LEFT_DDI_HDG_SW", 2), ("LEFT_DDI_HDG_SW", 1),
+    ]
 
     # Ordinary buttons pulse, while ALR-67 POWER never sends a release/off.
     s4_sent.clear()
-    w._system4_controls["pb15"].button.click()
-    assert s4_sent == [("AMPCD_PB_15", 1), ("AMPCD_PB_15", 0)]
+    w._system4_controls["rwr_display"].button.click()
+    assert s4_sent == [("RWR_DISPLAY_BTN", 1), ("RWR_DISPLAY_BTN", 0)]
     s4_sent.clear()
     w._system4_controls["rwr_power"].button.click()
     assert s4_sent == [("RWR_POWER_BTN", 1)]
@@ -635,14 +641,17 @@ try:
         button.testAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
         for button in system4_buttons
     )
+    assert all(button.minimumWidth() >= 56 and button.minimumHeight() >= 44
+               for control in w._system4_controls.values()
+               for button in control.findChildren(TouchButton))
     s4_sent.clear()
-    touch_button = w._system4_controls["pb15"].button
+    touch_button = w._system4_controls["rwr_display"].button
     begin = FakeTouchEvent(QEvent.Type.TouchBegin)
     end = FakeTouchEvent(QEvent.Type.TouchEnd)
     assert touch_button.event(begin) and begin.accepted
-    assert s4_sent == [("AMPCD_PB_15", 1)]
+    assert s4_sent == [("RWR_DISPLAY_BTN", 1)]
     assert touch_button.event(end) and end.accepted
-    assert s4_sent == [("AMPCD_PB_15", 1), ("AMPCD_PB_15", 0)]
+    assert s4_sent == [("RWR_DISPLAY_BTN", 1), ("RWR_DISPLAY_BTN", 0)]
     s4_sent.clear()
     power_button = w._system4_controls["rwr_power"].button
     power_button.event(FakeTouchEvent(QEvent.Type.TouchBegin))
@@ -712,12 +721,18 @@ try:
     parser_state[0x742C] = raw_742c & 0xFF
     parser_state[0x742D] = raw_742c >> 8
     parser_state[0x7458] = 0xFF; parser_state[0x7459] = 0x7F
+    raw_74a8 = (2 << 11) | (0 << 13)
+    parser_state[0x74A8] = raw_74a8 & 0xFF; parser_state[0x74A9] = raw_74a8 >> 8
     raw_7498 = (1 << 12) | (1 << 15)
     parser_state[0x7498] = raw_7498 & 0xFF; parser_state[0x7499] = raw_7498 >> 8
     w._system4_poll_feedback()
     assert w._system4_controls["hud_rej"].current_index == 2
     assert w._system4_controls["hud_mode"].current_index == 1
     assert w._system4_controls["hud_alt"].current_index == 1
+    assert w._system4_controls["hdg"].position == 1
+    assert w._system4_controls["hdg"].center.text() == "RIGHT"
+    assert w._system4_controls["crs"].position == -1
+    assert w._system4_controls["crs"].center.text() == "LEFT"
     assert w._system4_controls["rwr_power"].lamp_on
     assert w._system4_controls["rwr_special"].lamp_on
 

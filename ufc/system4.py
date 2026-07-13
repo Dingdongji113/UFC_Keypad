@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SYSTEM 4A HUD/AMPCD and SYSTEM 4B EW/JETT integration."""
+"""SYSTEM 4A HUD/NAV and SYSTEM 4B EW/JETT integration."""
 from __future__ import annotations
 
 import time
@@ -11,8 +11,7 @@ from PyQt6.QtWidgets import QFrame, QLabel
 
 import ufc.dcs_bios as dcs_bios
 from ufc.system4_mapping import (
-    AMPCD_BOTTOM_LEFT_TO_RIGHT, CONTROLS, FEEDBACK_FIELDS,
-    analog_feedback_fields, integer_feedback_fields,
+    CONTROLS, FEEDBACK_FIELDS, analog_feedback_fields, integer_feedback_fields,
 )
 from ufc.system4_safety import System4Safety
 from ufc.system4_widgets import (
@@ -110,7 +109,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         back.setStyleSheet(TAB_STYLE)
         back.clicked.connect(lambda: self._show_page("select"))
         self._system4_register(back, 8, 7, 130, 50, page, 10)
-        tab_a = TouchButton("HUD / AMPCD", self)
+        tab_a = TouchButton("HUD / NAV", self)
         tab_b = TouchButton("EW / JETT", self)
         for tab in (tab_a, tab_b):
             tab.setCheckable(True)
@@ -142,20 +141,18 @@ def install_system4(UFCKeypadWindowClass) -> None:
         )
 
         # SYSTEM 4A
-        self._system4_make_header(PAGE_4A, "SYSTEM 4 · HUD / AMPCD")
+        self._system4_make_header(PAGE_4A, "SYSTEM 4 · HUD / NAV")
         self._system4_outer_frame(PAGE_4A)
-        self._system4_section("HUD FLIGHT", 8, 68, 620, 145, PAGE_4A)
-        self._system4_section("NAV / ADF", 638, 68, 378, 145, PAGE_4A)
-        self._system4_section("HUD VIDEO / LEVEL", 8, 220, 1008, 135, PAGE_4A)
-        self._system4_section("AMPCD LOWER", 8, 362, 1008, 225, PAGE_4A)
+        self._system4_section("HUD FLIGHT", 8, 68, 1008, 172, PAGE_4A)
+        self._system4_section("HUD VIDEO / LEVEL", 8, 247, 1008, 166, PAGE_4A)
+        self._system4_section("ADF / HEADING / COURSE", 8, 420, 1008, 167, PAGE_4A)
 
         for key, cls, geom in (
-            ("hud_rej", ThreePositionToggle, (18, 96, 190, 105)),
-            ("hud_mode", TwoPositionToggle, (218, 96, 125, 105)),
-            ("hud_alt", TwoPositionToggle, (353, 96, 125, 105)),
-            ("hud_att", ThreePositionToggle, (488, 96, 130, 105)),
-            ("adf", ThreePositionToggle, (650, 96, 354, 105)),
-            ("hud_video", ThreePositionToggle, (18, 248, 180, 95)),
+            ("hud_rej", ThreePositionToggle, (18, 98, 240, 130)),
+            ("hud_mode", TwoPositionToggle, (268, 98, 230, 130)),
+            ("hud_alt", TwoPositionToggle, (508, 98, 230, 130)),
+            ("hud_att", ThreePositionToggle, (748, 98, 258, 130)),
+            ("hud_video", ThreePositionToggle, (18, 277, 188, 124)),
         ):
             spec = CONTROLS[key]
             if cls is TwoPositionToggle:
@@ -173,57 +170,41 @@ def install_system4(UFCKeypadWindowClass) -> None:
                 key, control, geom, PAGE_4A,
             )
         for key, title, geom in (
-            ("hud_brt", "HUD BRT", (205, 248, 155, 95)),
-            ("hud_black", "BLK LVL", (367, 248, 155, 95)),
-            ("hud_balance", "BAL", (529, 248, 155, 95)),
-            ("hud_aoa", "AOA INDEXER", (691, 248, 315, 95)),
+            ("hud_brt", "HUD BRT", (214, 277, 188, 124)),
+            ("hud_black", "BLK LVL", (410, 277, 188, 124)),
+            ("hud_balance", "BAL", (606, 277, 188, 124)),
+            ("hud_aoa", "AOA INDEXER", (802, 277, 204, 124)),
         ):
             self._system4_add_control(key, AnalogKnob(title, self._system4_sender(key), self), geom, PAGE_4A)
 
+        spec = CONTROLS["adf"]
         self._system4_add_control(
-            "hdg", SpringThreePositionToggle("HDG", self._system4_sender("hdg"), rocker=True, parent=self),
-            (18, 390, 125, 80), PAGE_4A,
+            "adf", ThreePositionToggle("ADF", spec.labels, spec.values,
+                                         self._system4_sender("adf"), self),
+            (18, 450, 300, 124), PAGE_4A,
         )
-        pb_x = (150, 270, 390, 510, 630)
-        for x, number in zip(pb_x, AMPCD_BOTTOM_LEFT_TO_RIGHT):
-            key = f"pb{number}"
-            self._system4_add_control(key, PushButton(f"PB{number}", self._system4_sender(key), parent=self),
-                                      (x, 390, 110, 80), PAGE_4A)
         self._system4_add_control(
-            "crs", SpringThreePositionToggle("CRS", self._system4_sender("crs"), rocker=True, parent=self),
-            (750, 390, 256, 80), PAGE_4A,
+            "hdg", SpringThreePositionToggle("HDG", self._system4_sender("hdg"), parent=self),
+            (326, 450, 330, 124), PAGE_4A,
         )
-        spec = CONTROLS["ampcd_mode"]
         self._system4_add_control(
-            "ampcd_mode", ThreePositionToggle("NIGHT / DAY", spec.labels, spec.values,
-                                                self._system4_sender("ampcd_mode"), self),
-            (18, 478, 190, 96), PAGE_4A,
+            "crs", SpringThreePositionToggle("CRS", self._system4_sender("crs"), parent=self),
+            (664, 450, 342, 124), PAGE_4A,
         )
-        self._system4_add_control("ampcd_brt", AnalogKnob("AMPCD BRT", self._system4_sender("ampcd_brt"), self),
-                                  (216, 478, 170, 96), PAGE_4A)
-        for key, title, x, width in (
-            ("ampcd_sym", "SYM", 394, 170),
-            ("ampcd_cont", "CONT", 572, 170),
-            ("ampcd_gain", "GAIN", 750, 256),
-        ):
-            self._system4_add_control(
-                key, SpringThreePositionToggle(title, self._system4_sender(key), parent=self),
-                (x, 478, width, 96), PAGE_4A,
-            )
 
         # SYSTEM 4B
         self._system4_make_header(PAGE_4B, "SYSTEM 4 · EW / JETT")
         self._system4_outer_frame(PAGE_4B)
-        self._system4_section("ALR-67", 8, 68, 1008, 180, PAGE_4B)
-        self._system4_section("ECM / CMDS", 8, 255, 650, 185, PAGE_4B)
-        self._system4_section("RELEASE", 668, 255, 348, 185, PAGE_4B)
-        self._system4_section("DANGER / JETTISON", 8, 448, 1008, 139, PAGE_4B, True)
+        self._system4_section("ALR-67", 8, 68, 1008, 190, PAGE_4B)
+        self._system4_section("ECM / CMDS", 8, 265, 650, 170, PAGE_4B)
+        self._system4_section("RELEASE", 668, 265, 348, 170, PAGE_4B)
+        self._system4_section("JETTISON", 8, 442, 1008, 145, PAGE_4B, True)
         for key, title, geom, press_only in (
-            ("rwr_power", "POWER", (20, 100, 180, 130), True),
-            ("rwr_display", "DISPLAY", (210, 100, 180, 130), False),
-            ("rwr_special", "SPECIAL", (400, 100, 180, 130), False),
-            ("rwr_offset", "OFFSET", (590, 100, 180, 130), False),
-            ("rwr_bit", "BIT", (780, 100, 224, 130), False),
+            ("rwr_bit", "BIT", (20, 98, 188, 145), False),
+            ("rwr_offset", "OFFSET", (218, 98, 188, 145), False),
+            ("rwr_special", "SPECIAL", (416, 98, 188, 145), False),
+            ("rwr_display", "DISPLAY", (614, 98, 188, 145), False),
+            ("rwr_power", "POWER", (812, 98, 194, 145), True),
         ):
             self._system4_add_control(
                 key, PushButton(title, self._system4_sender(key), press_only=press_only,
@@ -234,17 +215,17 @@ def install_system4(UFCKeypadWindowClass) -> None:
         self._system4_add_control(
             "ecm_mode", DetentRotary("ECM MODE", spec.labels, spec.values,
                                       self._system4_sender("ecm_mode"), self),
-            (20, 285, 250, 140), PAGE_4B,
+            (20, 295, 300, 125), PAGE_4B,
         )
         spec = CONTROLS["dispenser"]
         self._system4_add_control(
             "dispenser", ThreePositionToggle("DISPENSER", spec.labels, spec.values,
                                                self._system4_sender("dispenser"), self),
-            (280, 285, 220, 140), PAGE_4B,
+            (330, 295, 316, 125), PAGE_4B,
         )
         ecm_hold = GuardedHoldButton("ECM JETT", 1000, self._system4_safety.execute_ecm_jett,
                                      danger=False, parent=self)
-        self._system4_ecm_hold = self._system4_add_control("ecm_jett", ecm_hold, (510, 285, 136, 140), PAGE_4B)
+        self._system4_ecm_hold = self._system4_add_control("ecm_jett", ecm_hold, (20, 470, 240, 105), PAGE_4B)
 
         def aux_select(value):
             ok = self._system4_safety.request_aux(bool(value))
@@ -254,7 +235,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         spec = CONTROLS["aux_rel"]
         self._system4_add_control(
             "aux_rel", TwoPositionToggle("AUX REL", spec.labels, spec.values, aux_select, self),
-            (680, 285, 324, 140), PAGE_4B,
+            (680, 295, 324, 125), PAGE_4B,
         )
         arm = TouchButton("ARM", self)
         arm.setCheckable(True)
@@ -266,10 +247,10 @@ def install_system4(UFCKeypadWindowClass) -> None:
         arm.clicked.connect(lambda: self._system4_safety.arm_emergency()
                             if not self._system4_safety.emer_armed
                             else self._system4_safety.disarm("EMER JETT DISARMED"))
-        self._system4_arm_button = self._system4_register(arm, 30, 482, 250, 90, PAGE_4B, 13)
+        self._system4_arm_button = self._system4_register(arm, 270, 470, 220, 105, PAGE_4B, 13)
         emer = GuardedHoldButton("EMER JETT", 1500, self._system4_safety.execute_emergency,
                                  danger=True, parent=self)
-        self._system4_emer_hold = self._system4_add_control("emer_jett", emer, (300, 482, 690, 90), PAGE_4B, 11)
+        self._system4_emer_hold = self._system4_add_control("emer_jett", emer, (500, 470, 506, 105), PAGE_4B, 11)
 
         self._system4_feedback_timer = QTimer(self)
         self._system4_feedback_timer.setInterval(100)
@@ -313,7 +294,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         previous_init_select(self)
         cell = self._select_cells.get((201, 3))
         if cell:
-            cell.setText("4  SYSTEM 4\nHUD / AMPCD / EW")
+            cell.setText("4  SYSTEM 4\nHUD / NAV / EW")
 
     def init_ui(self):
         previous_init_ui(self)
