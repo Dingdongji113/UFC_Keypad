@@ -735,7 +735,7 @@ class UFCKeypadWindow(QWidget):
             ("1  LOCAL ICP",     (201, 0), True),
             ("2  MORSE LIGHT",   (201, 1), True),
             ("3  LIGHT CONTROL",  (201, 2), True),
-            ("4  SYSTEM 4",       (201, 3), True),
+            ("4  HUD/NAV/EW",     (201, 3), True),
         ]
         options.extend(
             (f"{number}  (RESERVED)", (201, number - 1), False)

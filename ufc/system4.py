@@ -307,7 +307,7 @@ def install_system4(UFCKeypadWindowClass) -> None:
         previous_init_select(self)
         cell = self._select_cells.get((201, 3))
         if cell:
-            cell.setText("4  SYSTEM 4\nHUD / NAV / EW")
+            cell.setText("4  HUD/NAV/EW")
 
     def init_ui(self):
         previous_init_ui(self)

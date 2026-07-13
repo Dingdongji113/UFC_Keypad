@@ -615,8 +615,7 @@ assert w._cold_state == "wait_user"
 print("[6] HMD ORDER OK")
 
 # SYSTEM 4 page registration, mapping, feedback and safety contracts.
-assert "SYSTEM 4" in w._select_cells[(201, 3)].label.text()
-assert "HUD / NAV / EW" in w._select_cells[(201, 3)].label.text()
+assert w._select_cells[(201, 3)].label.text() == "4  HUD/NAV/EW"
 assert len(w._system4_controls) == 22
 assert CONTROLS["adf"].labels == ("1", "OFF", "2")
 assert CONTROLS["adf"].values == (2, 1, 0)
