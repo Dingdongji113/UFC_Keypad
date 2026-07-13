@@ -576,6 +576,8 @@ print("[6] HMD ORDER OK")
 assert "SYSTEM 4" in w._select_cells[(201, 3)].label.text()
 assert "HUD / NAV / EW" in w._select_cells[(201, 3)].label.text()
 assert len(w._system4_controls) == 22
+assert CONTROLS["adf"].labels == ("2", "OFF", "1")
+assert CONTROLS["adf"].values == (0, 1, 2)
 assert not ({"ampcd_brt", "ampcd_mode", "ampcd_sym", "ampcd_cont", "ampcd_gain",
              "pb11", "pb12", "pb13", "pb14", "pb15"} & set(w._system4_controls))
 assert (w._system4_controls["rwr_bit"].x()
@@ -630,11 +632,10 @@ try:
     power.button.click()
     power.button.click()
     assert s4_sent == [("RWR_POWER_BTN", 1), ("RWR_POWER_BTN", 0)]
-    assert power.button.text() == "POWER"
-    assert w._system4_controls["rwr_display"].button.text() == "LIMIT\nDISPLAY"
-    assert w._system4_controls["rwr_special"].button.text() == "SPECIAL\nENABLE"
-    assert w._system4_controls["rwr_offset"].button.text() == "OFFSET\nENABLE"
-    assert w._system4_controls["rwr_bit"].button.text() == "BIT\nFAIL"
+    assert power.button.text() == ""
+    for key in ("rwr_display", "rwr_special", "rwr_offset", "rwr_bit"):
+        assert w._system4_controls[key].button.text() == ""
+        assert w._system4_controls[key].button.minimumWidth() == w._system4_controls[key].button.minimumHeight()
 
     # Native touch owns the full press lifecycle. It must not depend on a
     # synthesized mouse event, and every SYSTEM 4 button must use it.
@@ -732,7 +733,7 @@ try:
     parser_state[0x7458] = 0xFF; parser_state[0x7459] = 0x7F
     raw_74a8 = (2 << 11) | (0 << 13)
     parser_state[0x74A8] = raw_74a8 & 0xFF; parser_state[0x74A9] = raw_74a8 >> 8
-    raw_7498 = (1 << 12) | (1 << 15)
+    raw_7498 = (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15)
     parser_state[0x7498] = raw_7498 & 0xFF; parser_state[0x7499] = raw_7498 >> 8
     w._system4_poll_feedback()
     assert w._system4_controls["hud_rej"].current_index == 2
@@ -743,7 +744,10 @@ try:
     assert w._system4_controls["crs"].position == -1
     assert w._system4_controls["crs"].center.text() == "LEFT"
     assert w._system4_controls["rwr_power"].lamp_on
-    assert w._system4_controls["rwr_special"].lamp_on
+    assert not w._system4_controls["rwr_special"].lamp_on
+    assert w._system4_controls["rwr_power"].button.text() == "POWER"
+    assert w._system4_controls["rwr_display"].button.text() == "LIMIT\nDISPLAY"
+    assert w._system4_controls["rwr_special"].button.text() == "ENABLE"
 
     # Page changes and disconnects disarm every pending action.
     assert w._system4_safety.arm_emergency()

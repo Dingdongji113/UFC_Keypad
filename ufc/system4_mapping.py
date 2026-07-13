@@ -61,7 +61,9 @@ CONTROLS = {
     "hud_black": _m("HUD_BLACK_LVL", "analog", device=34, command=3004, argument=143, address=0x745A),
     "hud_balance": _m("HUD_BALANCE", "analog", device=34, command=3006, argument=145, address=0x745C),
     "hud_aoa": _m("HUD_AOA_INDEXER", "analog", device=34, command=3007, argument=146, address=0x745E),
-    "adf": _m("UFC_ADF", "stable3", ("1", "OFF", "2"), (0, 1, 2),
+    # The installed metadata lists 1/OFF/2, but the live cockpit's physical
+    # left/right orientation is reversed on the touch panel.
+    "adf": _m("UFC_ADF", "stable3", ("2", "OFF", "1"), (0, 1, 2),
               device=25, command=3016, argument=107, address=0x7416, mask=0x00C0, shift=6),
 
     # SYSTEM 4A - left DDI heading/course spring-loaded rockers. DCS-BIOS
@@ -98,11 +100,14 @@ CONTROLS = {
 # Additional state lamps do not have user controls.
 FEEDBACK_FIELDS = {
     "rwr_lower_lt": (0x7498, 0x1000, 12),
+    "rwr_limit_lt": (0x7498, 0x2000, 13),
     "rwr_display_lt": (0x7498, 0x4000, 14),
     "rwr_special_en_lt": (0x7498, 0x8000, 15),
     "rwr_special_lt": (0x749C, 0x0100, 8),
     "rwr_offset_lt": (0x749C, 0x0400, 10),
+    "rwr_enable_lt": (0x749C, 0x0800, 11),
     "rwr_bit_lt": (0x749C, 0x1000, 12),
+    "rwr_fail_lt": (0x749C, 0x2000, 13),
 }
 
 

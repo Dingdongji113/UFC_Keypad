@@ -413,6 +413,71 @@ class PushButton(AvionicsControl):
         self.lamp_on = on
 
 
+class Alr67Button(AvionicsControl):
+    """Square ALR-67 annunciator/touch face with feedback-driven legends."""
+
+    def __init__(self, sender: Callable[[object], None], legends, *, primary_field: str,
+                 latching=False, parent=None):
+        super().__init__("", parent)
+        self._title.hide()
+        self.sender = sender
+        self.legends = tuple((str(field), str(text)) for field, text in legends)
+        self.primary_field = str(primary_field)
+        self.latching = bool(latching)
+        self.lamp_on = False
+        self._lamp_states = {field: False for field, _text in self.legends}
+        self._layout.setContentsMargins(7, 7, 7, 7)
+        self.button = self._button("", self.latching)
+        self.button.setMinimumSize(116, 116)
+        self.button.setMaximumSize(126, 126)
+        self._layout.addWidget(
+            self.button, 1,
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+        )
+        self._refresh_face()
+        if self.latching:
+            self.button.clicked.connect(self._toggle_latched)
+        else:
+            self.button.pressed.connect(lambda: self.sender(1))
+            self.button.released.connect(lambda: self.sender(0))
+
+    def _toggle_latched(self) -> None:
+        target = 0 if self.lamp_on else 1
+        self.sender(target)
+        self.set_lamp_feedback(self.primary_field, target)
+
+    def _refresh_face(self) -> None:
+        active = [text for field, text in self.legends if self._lamp_states.get(field, False)]
+        failed = any(text == "FAIL" and self._lamp_states.get(field, False)
+                     for field, text in self.legends)
+        self.button.setText("\n".join(active))
+        if failed:
+            color, border, background = "#ff5757", "#cf3434", "#4b1010"
+        elif active:
+            color, border, background = "#effff4", GREEN, "#115b2e"
+        else:
+            color, border, background = "transparent", GREEN_DIM, "#07100b"
+        self.button.setStyleSheet(
+            f"QPushButton {{ color:{color}; background:{background}; border:3px solid {border}; padding:4px; }}"
+            f"QPushButton:pressed {{ background:#123a22; border-color:{GREEN}; }}"
+        )
+        self.lamp_on = bool(self._lamp_states.get(self.primary_field, False))
+        if self.latching:
+            self.button.setChecked(self.lamp_on)
+
+    def set_lamp_feedback(self, field: str, value) -> None:
+        if field not in self._lamp_states:
+            return
+        try:
+            self._lamp_states[field] = float(value) >= 0.5
+        except (TypeError, ValueError):
+            self._lamp_states[field] = False
+        self._refresh_face()
+
+    def set_feedback(self, value) -> None:
+        self.set_lamp_feedback(self.primary_field, value)
+
+
 class GuardedHoldButton(AvionicsControl):
     def __init__(self, title: str, hold_ms: int, completed: Callable[[], None], *, danger=False, parent=None):
         super().__init__(title, parent)

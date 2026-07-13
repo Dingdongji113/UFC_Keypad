@@ -15,7 +15,7 @@ from ufc.system4_mapping import (
 )
 from ufc.system4_safety import System4Safety
 from ufc.system4_widgets import (
-    AnalogKnob, CutCornerFrame, DetentRotary, GuardedHoldButton, PushButton,
+    Alr67Button, AnalogKnob, CutCornerFrame, DetentRotary, GuardedHoldButton,
     SpringThreePositionToggle, ThreePositionToggle, TouchButton, TwoPositionToggle,
 )
 
@@ -23,6 +23,17 @@ from ufc.system4_widgets import (
 PAGE_4A = "system4a"
 PAGE_4B = "system4b"
 SYSTEM4_PAGES = (PAGE_4A, PAGE_4B)
+
+ALR67_LEGENDS = {
+    "rwr_bit": (("rwr_bit_lt", "BIT"), ("rwr_fail_lt", "FAIL")),
+    "rwr_offset": (("rwr_offset_lt", "OFFSET"), ("rwr_enable_lt", "ENABLE")),
+    "rwr_special": (("rwr_special_lt", "SPECIAL"), ("rwr_special_en_lt", "ENABLE")),
+    "rwr_display": (("rwr_limit_lt", "LIMIT"), ("rwr_display_lt", "DISPLAY")),
+    "rwr_power": (("rwr_lower_lt", "POWER"),),
+}
+ALR67_FIELD_TO_CONTROL = {
+    field: key for key, legends in ALR67_LEGENDS.items() for field, _text in legends
+}
 
 FRAME_STYLE = "QFrame { background:#020604; border:2px solid #53615a; }"
 TITLE_STYLE = "color:#00e65c; background:#020604; border:none;"
@@ -199,16 +210,19 @@ def install_system4(UFCKeypadWindowClass) -> None:
         self._system4_section("ECM / CMDS", 8, 265, 650, 170, PAGE_4B)
         self._system4_section("RELEASE", 668, 265, 348, 170, PAGE_4B)
         self._system4_section("JETTISON", 8, 442, 1008, 145, PAGE_4B, True)
-        for key, title, button_text, geom, latching in (
-            ("rwr_bit", "BIT / FAIL", "BIT\nFAIL", (20, 98, 188, 145), False),
-            ("rwr_offset", "OFFSET / ENABLE", "OFFSET\nENABLE", (218, 98, 188, 145), False),
-            ("rwr_special", "SPECIAL / ENABLE", "SPECIAL\nENABLE", (416, 98, 188, 145), False),
-            ("rwr_display", "LIMIT / DISPLAY", "LIMIT\nDISPLAY", (614, 98, 188, 145), False),
-            ("rwr_power", "POWER", "POWER", (812, 98, 194, 145), True),
+        for key, geom, latching in (
+            ("rwr_bit", (20, 98, 188, 145), False),
+            ("rwr_offset", (218, 98, 188, 145), False),
+            ("rwr_special", (416, 98, 188, 145), False),
+            ("rwr_display", (614, 98, 188, 145), False),
+            ("rwr_power", (812, 98, 194, 145), True),
         ):
             self._system4_add_control(
-                key, PushButton(title, self._system4_sender(key), latching=latching,
-                                show_lamp=True, button_text=button_text, parent=self),
+                key, Alr67Button(
+                    self._system4_sender(key), ALR67_LEGENDS[key],
+                    primary_field=CONTROLS[key].feedback,
+                    latching=latching, parent=self,
+                ),
                 geom, PAGE_4B,
             )
         spec = CONTROLS["ecm_mode"]
@@ -270,10 +284,9 @@ def install_system4(UFCKeypadWindowClass) -> None:
         for key, spec in CONTROLS.items():
             if spec.feedback == field and key in self._system4_controls:
                 self._system4_controls[key].set_feedback(value)
-        if field in ("rwr_special_lt", "rwr_special_en_lt"):
-            on = max(float(self._system4_feedback.get("rwr_special_lt", 0)),
-                     float(self._system4_feedback.get("rwr_special_en_lt", 0)))
-            self._system4_controls["rwr_special"].set_feedback(on)
+        alr_key = ALR67_FIELD_TO_CONTROL.get(field)
+        if alr_key and alr_key in self._system4_controls:
+            self._system4_controls[alr_key].set_lamp_feedback(field, value)
 
     def _system4_poll_feedback(self) -> None:
         connected = not bool(getattr(self, "_dcs_disconnected", True))
