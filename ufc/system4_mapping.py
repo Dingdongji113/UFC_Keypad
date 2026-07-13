@@ -104,10 +104,10 @@ FEEDBACK_FIELDS = {
     "rwr_display_lt": (0x7498, 0x4000, 14),
     "rwr_special_en_lt": (0x7498, 0x8000, 15),
     "rwr_special_lt": (0x749C, 0x0100, 8),
+    "rwr_enable_lt": (0x749C, 0x0200, 9),
     "rwr_offset_lt": (0x749C, 0x0400, 10),
-    "rwr_enable_lt": (0x749C, 0x0800, 11),
+    "rwr_fail_lt": (0x749C, 0x0800, 11),
     "rwr_bit_lt": (0x749C, 0x1000, 12),
-    "rwr_fail_lt": (0x749C, 0x2000, 13),
 }
 
 

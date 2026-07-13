@@ -578,6 +578,8 @@ assert "HUD / NAV / EW" in w._select_cells[(201, 3)].label.text()
 assert len(w._system4_controls) == 22
 assert CONTROLS["adf"].labels == ("1", "OFF", "2")
 assert CONTROLS["adf"].values == (2, 1, 0)
+assert S4.integer_feedback_fields()["rwr_enable_lt"] == (0x749C, 0x0200, 9)
+assert S4.integer_feedback_fields()["rwr_fail_lt"] == (0x749C, 0x0800, 11)
 assert not ({"ampcd_brt", "ampcd_mode", "ampcd_sym", "ampcd_cont", "ampcd_gain",
              "pb11", "pb12", "pb13", "pb14", "pb15"} & set(w._system4_controls))
 assert (w._system4_controls["rwr_bit"].x()
@@ -745,6 +747,8 @@ try:
     parser_state[0x74A8] = raw_74a8 & 0xFF; parser_state[0x74A9] = raw_74a8 >> 8
     raw_7498 = (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15)
     parser_state[0x7498] = raw_7498 & 0xFF; parser_state[0x7499] = raw_7498 >> 8
+    raw_749c = (1 << 9) | (1 << 11) | (1 << 12)
+    parser_state[0x749C] = raw_749c & 0xFF; parser_state[0x749D] = raw_749c >> 8
     w._system4_poll_feedback()
     assert w._system4_controls["hud_rej"].current_index == 2
     assert w._system4_controls["hud_mode"].current_index == 1
@@ -758,9 +762,8 @@ try:
     assert w._system4_controls["rwr_power"].legend_texts() == ("ON",)
     assert w._system4_controls["rwr_display"].legend_texts() == ("LIMIT", "DISPLAY")
     assert w._system4_controls["rwr_special"].legend_texts() == ("ENABLE", "")
-    w._system4_apply_feedback("rwr_fail_lt", 1)
-    w._system4_apply_feedback("rwr_bit_lt", 1)
     assert w._system4_controls["rwr_bit"].legend_texts() == ("FAIL", "BIT")
+    assert w._system4_controls["rwr_offset"].legend_texts() == ("ENABLE", "")
     assert "#cf3434" in w._system4_controls["rwr_bit"].button.styleSheet()
 
     # Page changes and disconnects disarm every pending action.
