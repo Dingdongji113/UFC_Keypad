@@ -41,7 +41,7 @@ for name in [
     importlib.import_module("ufc." + name)
 print(f"[1] COMPILE / IMPORT OK ({len(modules)} modules)")
 
-from PyQt6.QtCore import QEvent, QEventLoop, Qt, QTimer
+from PyQt6.QtCore import QEvent, QEventLoop, QPointF, Qt, QTimer
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
@@ -127,6 +127,48 @@ w = UFCKeypadWindow()
 w._apply_noactivate_style = lambda: None
 DCSBIOSReceiver.start, DCSBIOSReceiver.stop = receiver_start, receiver_stop
 print("[2] OFFSCREEN CONSTRUCT OK")
+
+# System select is a touch-drag list: 4 live entries + 11 reserved slots.
+assert len(w._select_cells) == 15
+assert set(w._select_cells) == {(201, index) for index in range(15)}
+assert sum(bool(getattr(cell, "_menu_active", False))
+           for cell in w._select_cells.values()) == 4
+assert all(getattr(w._select_cells[(201, index)], "_menu_active", False)
+           for index in range(4))
+assert all(not getattr(w._select_cells[(201, index)], "_menu_active", True)
+           for index in range(4, 15))
+select_back = next(
+    widget for widget, *_ in w._widget_origins
+    if isinstance(widget, UI.UFCCell)
+    and getattr(widget, "_page", None) == "select"
+    and getattr(widget, "pos", None) == (200, 0)
+)
+assert select_back.label.text() == "BACK"
+select_menu = w._select_menu
+assert select_menu.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+assert select_menu.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+w.show()
+w._show_page("select")
+app.processEvents()
+assert select_menu.verticalScrollBar().maximum() > 0
+activated_menu_items = []
+select_menu.menuActivated.connect(activated_menu_items.append)
+select_menu.verticalScrollBar().setValue(0)
+select_menu._begin_drag(QPointF(500, 400))
+select_menu._move_drag(QPointF(500, 80))
+select_menu._end_drag(QPointF(500, 80))
+assert select_menu.verticalScrollBar().value() > 0
+assert activated_menu_items == []
+select_menu.verticalScrollBar().setValue(0)
+select_menu._begin_drag(QPointF(500, 45))
+select_menu._end_drag(QPointF(500, 45))
+assert activated_menu_items == [(201, 0)]
+w._show_page("select")
+select_menu.verticalScrollBar().setValue(0)
+select_menu._begin_drag(QPointF(500, 460))
+select_menu._end_drag(QPointF(500, 460))
+assert activated_menu_items == [(201, 0)]
+print("[2b] 15-SLOT TOUCH SCROLL MENU OK")
 
 # Primary action text: setup CONFIRM, checklist step 1 START, step 2+ CONTINUE.
 w._cold_first_mode_decided = True

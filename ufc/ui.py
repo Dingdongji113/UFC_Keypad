@@ -396,6 +396,8 @@ class UFCKeypadWindow(QWidget):
                 widget._apply_brightness(b, tc, bc, hb, pb)
             elif isinstance(widget, UFCBlank) and getattr(widget, '_bordered', False):
                 widget.setStyleSheet(f"background-color: {BG_COLOR}; border: 2px solid {bc};")
+            elif isinstance(widget, TouchMenuScroll):
+                widget.apply_brightness(b, tc, bc, hb, pb)
             
     def set_display(self, pos, text):
         """设置可变显示方块的文本"""
@@ -715,25 +717,33 @@ class UFCKeypadWindow(QWidget):
     def _init_system_select(self):
         """系统选择页面 — 5个选项"""
         # Row 0: SYSTEMS(返回) | "SYSTEM SELECT" 显示
-        self.place_cell("SYSTEMS", (200, 0), 8, 7, 140, 90, font_size=20,
+        self.place_cell("BACK", (200, 0), 8, 7, 140, 90, font_size=20,
                         register=False, page="select")
         self.place_cell("SYSTEM SELECT", None, 164, 7, 852, 90, font_size=28,
                         is_variable=True, register=False, no_feedback=True,
                         page="select")
 
         # 5个选项 (Row 1-5)
+        menu = TouchMenuScroll(self)
+        menu._page = "select"
+        menu.setGeometry(8, 114, 1008, 478)
+        menu.menuActivated.connect(self.on_cell_click)
+        self._widget_origins.append((menu, 8, 114, 1008, 478, 0))
+        self._select_menu = menu
+
         options = [
             ("1  LOCAL ICP",     (201, 0), True),
             ("2  MORSE LIGHT",   (201, 1), True),
             ("3  LIGHT CONTROL",  (201, 2), True),
-            ("4  (reserved)",    (201, 3), False),
-            ("5  (reserved)",    (201, 4), False),
+            ("4  SYSTEM 4",       (201, 3), True),
         ]
-        row_ys = [114, 221, 328, 435, 542]
-        row_hs = [90,  90,  90,  90,  50]
-        for i, (text, pos, active) in enumerate(options):
-            self.place_cell(text, pos, 8, row_ys[i], 1008, row_hs[i],
-                            font_size=22, page="select", bold=active)
+        options.extend(
+            (f"{number}  (RESERVED)", (201, number - 1), False)
+            for number in range(5, 16)
+        )
+        for index, (text, pos, active) in enumerate(options):
+            cell = menu.add_menu_item(text, pos, index, active=active, font_size=22)
+            self._select_cells[pos] = cell
 
     def _init_light_control(self):
         """LIGHT CONTROL 页面 — 左侧手动控制 + 右侧预设模式"""
@@ -1085,6 +1095,8 @@ class UFCKeypadWindow(QWidget):
             if ofont > 0 and isinstance(widget, UFCCell):
                 new_font_size = max(6, int(ofont * s))
                 widget.rescale_font(new_font_size)
+            elif isinstance(widget, TouchMenuScroll):
+                widget.rescale_content(s)
 
     def closeEvent(self, event):
         """窗口关闭时停止所有后台线程"""

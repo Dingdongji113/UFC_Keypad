@@ -9,6 +9,7 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **LIGHT CONTROL**：着陆/滑行灯、编队灯、航线灯、频闪灯手动控制 + 预设
 - **SYSTEM 4**：双子页 HUD/NAV 与 EW/JETT 控制；保留大触控 HDG/CRS，全部操作件直接处理原生触摸，包含真实反馈、回中开关、长按与武装保护
 - **SYSTEM SELECT**：页面切换中枢
+- **SYSTEM SELECT 触控列表**：固定 `BACK` 标题栏，下方共 15 项（4 个功能入口、11 个预留位），支持无滚动条的上下拖动
 - **可选启动动画**：打开面板后显示启动覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
   - `UFC BIT（军机自检风格）`：黑底绿字、BIT 自检、BUS SCAN
   - `千禧日式动画风格`：架空千禧日本动画风格终端、蓝黑 HUD、日文状态字

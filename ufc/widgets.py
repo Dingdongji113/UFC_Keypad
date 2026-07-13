@@ -4,7 +4,7 @@ import os
 import sys
 
 from PyQt6.QtWidgets import (QFrame, QWidget, QLabel, QApplication,
-                             QVBoxLayout, QSizePolicy)
+                             QVBoxLayout, QSizePolicy, QScrollArea)
 from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
 from PyQt6 import QtCore, QtGui
 from PyQt6.QtGui import (QColor, QFont, QPainter, QKeyEvent,
@@ -271,6 +271,156 @@ class UFCCell(QFrame):
         self._pb = pb
         self._refresh_stylesheet()
         self.repaint()  # 强制立即同步重绘（update 可能被 setStyleSheet 的内部重绘覆盖）
+
+
+class TouchMenuScroll(QScrollArea):
+    """Touch-drag menu viewport with hidden scroll bars and tap hit-testing."""
+
+    menuActivated = pyqtSignal(tuple)
+    ITEM_H = 90
+    ITEM_GAP = 17
+    DRAG_THRESHOLD = 12
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._page = "select"
+        self._items = []
+        self._content_base_h = 0
+        self._content_scale = 1.0
+        self._drag_active = False
+        self._drag_start_y = 0.0
+        self._drag_last_pos = None
+        self._drag_start_scroll = 0
+        self._drag_distance = 0.0
+
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setStyleSheet(f"QScrollArea {{ background:{BG_COLOR}; border:none; }}")
+        self.viewport().setStyleSheet(f"background:{BG_COLOR}; border:none;")
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        self.viewport().installEventFilter(self)
+
+        self.content = QWidget()
+        self.content.setStyleSheet(f"background:{BG_COLOR};")
+        self.content.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
+        self.content.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setWidget(self.content)
+
+    def add_menu_item(self, text, pos, index: int, *, active: bool, font_size=22):
+        y = int(index) * (self.ITEM_H + self.ITEM_GAP)
+        cell = UFCCell(
+            text, pos, font_size=font_size, bold=bool(active),
+            parent=self.content, no_feedback=not active,
+        )
+        cell._menu_active = bool(active)
+        cell._menu_base_geometry = (0, y, 1008, self.ITEM_H)
+        cell._menu_base_font = int(font_size)
+        cell.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
+        cell.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._items.append(cell)
+        self._content_base_h = y + self.ITEM_H
+        self.rescale_content(self._content_scale)
+        return cell
+
+    @staticmethod
+    def _event_position(event):
+        try:
+            points = event.points()
+            if points:
+                return points[0].position()
+        except (AttributeError, IndexError, TypeError):
+            pass
+        try:
+            return event.position()
+        except AttributeError:
+            return None
+
+    def _begin_drag(self, point) -> None:
+        if point is None:
+            return
+        self._drag_active = True
+        self._drag_start_y = float(point.y())
+        self._drag_last_pos = point
+        self._drag_start_scroll = self.verticalScrollBar().value()
+        self._drag_distance = 0.0
+
+    def _move_drag(self, point) -> None:
+        if not self._drag_active or point is None:
+            return
+        self._drag_last_pos = point
+        delta = float(point.y()) - self._drag_start_y
+        self._drag_distance = max(self._drag_distance, abs(delta))
+        self.verticalScrollBar().setValue(round(self._drag_start_scroll - delta))
+
+    def _tile_at(self, point):
+        if point is None:
+            return None
+        content_x = round(float(point.x()))
+        content_y = round(float(point.y())) + self.verticalScrollBar().value()
+        for cell in self._items:
+            if cell.geometry().contains(content_x, content_y):
+                return cell
+        return None
+
+    def _end_drag(self, point) -> None:
+        if not self._drag_active:
+            return
+        if point is None:
+            point = self._drag_last_pos
+        if point is not None:
+            self._drag_distance = max(
+                self._drag_distance,
+                abs(float(point.y()) - self._drag_start_y),
+            )
+        self._drag_active = False
+        if self._drag_distance <= self.DRAG_THRESHOLD:
+            cell = self._tile_at(point)
+            if cell is not None and getattr(cell, "_menu_active", False):
+                self.menuActivated.emit(cell.pos)
+
+    def eventFilter(self, watched, event):
+        if watched is self.viewport():
+            event_type = event.type()
+            if event_type in (QtCore.QEvent.Type.TouchBegin, QtCore.QEvent.Type.MouseButtonPress):
+                if event_type == QtCore.QEvent.Type.MouseButtonPress and event.button() != Qt.MouseButton.LeftButton:
+                    return False
+                self._begin_drag(self._event_position(event))
+                event.accept()
+                return True
+            if event_type in (QtCore.QEvent.Type.TouchUpdate, QtCore.QEvent.Type.MouseMove):
+                if self._drag_active:
+                    self._move_drag(self._event_position(event))
+                    event.accept()
+                    return True
+            if event_type in (QtCore.QEvent.Type.TouchEnd, QtCore.QEvent.Type.MouseButtonRelease):
+                if self._drag_active:
+                    self._end_drag(self._event_position(event))
+                    event.accept()
+                    return True
+            if event_type in (QtCore.QEvent.Type.TouchCancel, QtCore.QEvent.Type.Leave):
+                self._drag_active = False
+        return super().eventFilter(watched, event)
+
+    def rescale_content(self, scale: float) -> None:
+        scale = max(0.1, float(scale))
+        old_max = self.verticalScrollBar().maximum()
+        old_fraction = self.verticalScrollBar().value() / old_max if old_max else 0.0
+        self._content_scale = scale
+        self.content.resize(max(1, round(1008 * scale)),
+                            max(1, round(self._content_base_h * scale)))
+        for cell in self._items:
+            x, y, w, h = cell._menu_base_geometry
+            cell.setGeometry(round(x * scale), round(y * scale),
+                             max(1, round(w * scale)), max(1, round(h * scale)))
+            cell.rescale_font(max(10, round(cell._menu_base_font * scale)))
+        new_max = self.verticalScrollBar().maximum()
+        self.verticalScrollBar().setValue(round(old_fraction * new_max))
+
+    def apply_brightness(self, brightness, tc, bc, hb, pb) -> None:
+        for cell in self._items:
+            cell._apply_brightness(brightness, tc, bc, hb, pb)
 
 
 class UFCBlank(QFrame):
