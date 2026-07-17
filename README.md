@@ -1,5 +1,7 @@
 # UFC Keypad (模块化版)
 
+[English](README_EN.md) | [简体中文](README.md)
+
 F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DCS World 通信。
 基于 PyQt6，从原单体 `ufc_keypad.py` 拆分为清晰的模块包 `ufc/`。
 
@@ -13,6 +15,7 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 - **可选启动动画**：打开面板后显示启动覆盖层，等待第一条 DCS-BIOS 信号；收到信号后显示 ONLINE / READY 并自动切入 LOCAL ICP
   - `UFC BIT（军机自检风格）`：黑底绿字、BIT 自检、BUS SCAN
   - `千禧日式动画风格`：架空千禧日本动画风格终端、蓝黑 HUD、日文状态字
+- **中英文界面**：设置窗口支持跟随系统、English 和简体中文，切换立即生效并保存
 - DCS-BIOS 双向同步：接收 `239.255.50.10:5010/UDP`，发送 `127.0.0.1:7778/UDP`
 - Windows 原生触控隔离（WH_MOUSE_LL 钩子 + RegisterTouchWindow）
 - SYSTEM 4 不依赖触摸转鼠标；触摸移出或取消会立即释放，鼠标仅作为兼容输入保留
@@ -31,6 +34,24 @@ F/A-18C Hornet **Up Front Controller** 触控面板，通过 **DCS-BIOS** 与 DC
 pip install -r requirements.txt
 python main.py
 ```
+
+## 界面语言
+
+设置窗口新增“界面语言”选项：
+
+- `System / 跟随系统`：中文系统使用简体中文，其余系统使用英文
+- `English`
+- `简体中文`
+
+设置会写入 `ufc_config.json`：
+
+```json
+{
+  "language": "en_US"
+}
+```
+
+支持值为 `system`、`en_US` 和 `zh_CN`。航空电子术语、DCS 控制标识符和冷启动清单术语继续保持既有英文写法，不随界面语言改变。
 
 ## DCS Export bridge 诊断
 
@@ -111,6 +132,8 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 | `constants.py` | 屏幕尺寸、背景色、DCS-BIOS 标识符、布局辅助函数 |
 | `crashlog.py`  | 未捕获异常 → `ufc_crash.log` |
 | `config.py`    | `ufc_config.json` 读写 |
+| `i18n.py` | 中英文翻译、系统语言判断和语言配置 |
+| `i18n_ui.py` | 设置窗口运行时重翻译与语言选择器 |
 | `fonts.py`     | Hornet UFC 字体加载 (B612 回退) |
 | `morse.py`     | 文本 → 莫尔斯点划序列 |
 | `colors.py`    | 亮度 → 颜色计算 (绿色 LED 风格)，持有 `_CURRENT_BRIGHTNESS` 真值 |
@@ -122,6 +145,7 @@ pyinstaller --onefile --windowed --name UFC_Keypad_v5 ^
 | `system4_safety.py` | AUX REL、ECM JETT 与 EMER JETT 安全状态机 |
 | `system4.py` | SYSTEM 4A/4B 页面、反馈轮询与主窗口接入 |
 | `startup.py`   | 可选启动动画覆盖层与设置面板附加项 |
+| `startup_i18n.py` | 启动动画设置的中英文适配器 |
 | `ui.py`        | `UFCKeypadWindow` 主面板 + `SettingsWindow` 设置窗口 |
 | `main.py`      | 仓库根目录入口，创建 QApplication 与主窗口 |
 
