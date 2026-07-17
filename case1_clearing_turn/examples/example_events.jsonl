@@ -1,0 +1,5 @@
+{"run_id":"example-cat2-normal","event":"run_started","request":{"catapult_id":2,"launch_heading_deg":63.0,"carrier_brc_deg":63.0,"trim_check_passed":true,"auto_trim_completed":true},"first_target_heading_deg":83.0}
+{"run_id":"example-cat2-normal","event":"state_transition","timestamp":0.12,"old_state":"WAIT_LAUNCH","new_state":"WAIT_SAFE","exit_reason":null}
+{"run_id":"example-cat2-normal","event":"state_transition","timestamp":0.64,"old_state":"WAIT_SAFE","new_state":"FIRST_TURN","exit_reason":null}
+{"run_id":"example-cat2-normal","event":"state_transition","timestamp":12.15,"old_state":"BRC_CAPTURE","new_state":"EXITING","exit_reason":"NORMAL_COMPLETE"}
+{"run_id":"example-cat2-normal","event":"state_transition","timestamp":12.40,"old_state":"EXITING","new_state":"COMPLETED","exit_reason":"NORMAL_COMPLETE"}

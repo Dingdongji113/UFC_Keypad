@@ -1,0 +1,47 @@
+{
+  "clearing_turn": {
+    "first_turn_angle_deg": 20.0,
+    "safe_ias_kts": 150.0,
+    "minimum_positive_vs_fpm": 300.0,
+    "safe_condition_hold_s": 0.5,
+    "wait_safe_timeout_s": 5.0,
+    "first_turn_bank_deg": 12.0,
+    "capture_bank_deg": 10.0,
+    "max_commanded_bank_deg": 18.0,
+    "max_allowed_bank_deg": 25.0,
+    "max_roll_rate_command_deg_s": 8.0,
+    "reverse_lead_deg": 2.5,
+    "complete_heading_tolerance_deg": 1.5,
+    "complete_bank_tolerance_deg": 3.0,
+    "complete_roll_rate_tolerance_deg_s": 2.0,
+    "complete_hold_s": 0.5,
+    "takeover_threshold": 0.1,
+    "normal_release_time_s": 0.25,
+    "pilot_takeover_release_time_s": 0.1,
+    "safety_abort_release_time_s": 0.05,
+    "fault_release_time_s": 0.05,
+    "max_state_duration_s": {
+      "WAIT_LAUNCH": 30.0,
+      "WAIT_SAFE": 5.0,
+      "FIRST_TURN": 8.0,
+      "REVERSING": 5.0,
+      "BRC_CAPTURE": 12.0
+    },
+    "pid": {
+      "kp": 0.055,
+      "ki": 0.01,
+      "kd": 0.018,
+      "integral_limit": 15.0,
+      "output_rate_limit_per_s": 3.5
+    }
+  },
+  "audio": {
+    "enabled": true,
+    "test_mode": true,
+    "active": "case1_clearing_turn/audio/auto_turn_active.wav",
+    "complete": "case1_clearing_turn/audio/clearing_turn_complete.wav",
+    "pilot_control": "case1_clearing_turn/audio/pilot_control.wav",
+    "abort": "case1_clearing_turn/audio/auto_turn_abort.wav",
+    "fault": "case1_clearing_turn/audio/auto_control_fault.wav"
+  }
+}

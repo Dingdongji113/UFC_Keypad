@@ -1,0 +1,6 @@
+timestamp,state,heading,heading_error,bank,roll_rate,desired_bank,roll_command,ias,vertical_speed,pilot_roll_input
+0.64,FIRST_TURN,63.0,0.0,0.0,0.0,0.0,0.0,175.0,800.0,0.0
+3.00,FIRST_TURN,68.2,14.8,11.9,1.2,11.84,0.08,198.0,800.0,0.0
+6.10,REVERSING,80.6,-17.6,8.1,-4.0,-10.0,-0.42,229.0,800.0,0.0
+9.20,BRC_CAPTURE,70.4,-7.4,-9.3,-0.8,-4.81,0.19,260.0,800.0,0.0
+12.40,COMPLETED,63.8,-0.8,0.7,0.3,0.0,0.0,292.0,800.0,0.0
