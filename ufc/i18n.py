@@ -2,7 +2,7 @@
 """Small runtime localization layer for UFC Keypad.
 
 The project deliberately keeps avionics labels and DCS control identifiers in
-English.  This module localizes application chrome, settings, hints and status
+English. This module localizes application chrome, settings, hints and status
 messages without changing any DCS-BIOS behavior.
 """
 from __future__ import annotations
@@ -41,6 +41,10 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "settings.language.hint": {
         LANG_EN: "Changes apply immediately and are saved for the next launch.",
         LANG_ZH: "切换后立即生效，并保存为下次启动默认。",
+    },
+    "settings.language.changed": {
+        LANG_EN: "Interface language changed and saved.",
+        LANG_ZH: "界面语言已切换并保存。",
     },
     "settings.screen.group": {
         LANG_EN: "Display Output",
@@ -175,6 +179,7 @@ def normalize_language(value: object) -> str:
         "zh-cn": LANG_ZH,
         "zh_cn": LANG_ZH,
         "chinese": LANG_ZH,
+        "simplified chinese": LANG_ZH,
         "简体中文": LANG_ZH,
         "auto": LANG_SYSTEM,
     }
@@ -182,15 +187,34 @@ def normalize_language(value: object) -> str:
     return normalized if normalized in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
 
-def system_language() -> str:
+def _system_locale_candidates():
     candidates = []
     try:
         candidates.append(locale.getlocale()[0])
     except Exception:
         pass
-    candidates.extend((os.environ.get("LANG"), os.environ.get("LC_ALL"), os.environ.get("LC_MESSAGES")))
-    for value in candidates:
-        if value and str(value).lower().replace("-", "_").startswith("zh"):
+    try:
+        get_default = getattr(locale, "getdefaultlocale", None)
+        if get_default is not None:
+            candidates.append(get_default()[0])
+    except Exception:
+        pass
+    candidates.extend(
+        (
+            os.environ.get("LANG"),
+            os.environ.get("LC_ALL"),
+            os.environ.get("LC_MESSAGES"),
+        )
+    )
+    return candidates
+
+
+def system_language() -> str:
+    for value in _system_locale_candidates():
+        if not value:
+            continue
+        token = str(value).strip().lower().replace("-", "_")
+        if token.startswith("zh") or "chinese" in token or "简体" in token or "中文" in token:
             return LANG_ZH
     return LANG_EN
 
