@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
-"""UFC Keypad 入口：创建 QApplication 与主窗口。
-
-运行方式：
-    python main.py
-打包 (PyInstaller, 单文件无控制台)：
-    pyinstaller UFC_Keypad_v5.spec
-"""
+"""UFC Keypad entry point."""
 import os
 import sys
 import tempfile
@@ -14,7 +8,6 @@ import traceback
 
 
 def _bootstrap_log_path():
-    """main.py 最早期日志路径：不依赖 ufc 包，避免 import 崩溃无日志。"""
     candidates = []
     try:
         candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ufc_bootstrap.log"))
@@ -80,8 +73,10 @@ def main():
         from ufc.ifei_rpm import install_ifei_rpm_fallback
         from ufc.realtime_rpm import install_realtime_rpm_callbacks
         from ufc.startup import attach_startup_style_settings
+        from ufc.startup_i18n import attach_startup_settings_i18n
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
+        from ufc.i18n_ui import install_settings_i18n
         from ufc.cold_start import patch_cold_start
         from ufc.cold_direct_entry import install_cold_direct_entry
         from ufc.cold_setup_split import install_split_land_cv_setup
@@ -98,9 +93,11 @@ def main():
         from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
         from ufc.system4 import install_system4
+
         install_ifei_rpm_fallback()
         install_realtime_rpm_callbacks()
         patch_settings_window_apply_screen(SettingsWindow)
+        install_settings_i18n(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
         install_split_land_cv_setup(UFCKeypadWindow)
@@ -131,6 +128,7 @@ def main():
         _bootstrap_log("creating SettingsWindow")
         settings = SettingsWindow(key_panel)
         attach_startup_style_settings(settings)
+        attach_startup_settings_i18n(settings)
         settings.show()
 
         _bootstrap_log("entering Qt event loop")
