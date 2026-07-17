@@ -1,27 +1,18 @@
 # -*- coding: utf-8 -*-
 """Runtime localization patch for the existing SettingsWindow.
 
-This module keeps the large legacy ui.py stable.  It captures the settings
+This module keeps the large legacy ui.py stable. It captures the settings
 widgets after they are created, inserts a language selector, and retranslates
 all application-facing settings text in place.
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QComboBox,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-)
+from PyQt6.QtWidgets import QApplication, QComboBox, QGroupBox, QHBoxLayout, QLabel
 
 from ufc.i18n import (
     LANG_EN,
     LANG_SYSTEM,
     LANG_ZH,
-    active_language,
     configured_language,
     language_option_label,
     normalize_language,
@@ -88,7 +79,7 @@ def _insert_language_group(window):
     row.addWidget(hint)
     row.addStretch()
 
-    # Title is item 0 in the current settings layout.
+    # The title is item 0 in the current settings layout.
     layout.insertWidget(min(1, layout.count()), group)
 
     window.language_group = group
@@ -102,7 +93,7 @@ def _insert_language_group(window):
         retranslate_settings_window(window)
         window.refresh_screen_list()
         try:
-            from ufc.startup import retranslate_startup_style_settings
+            from ufc.startup_i18n import retranslate_startup_style_settings
             retranslate_startup_style_settings(window)
         except Exception:
             pass
