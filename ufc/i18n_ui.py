@@ -97,6 +97,8 @@ def _insert_language_group(window):
             retranslate_startup_style_settings(window)
         except Exception:
             pass
+        if hasattr(window, "status_label"):
+            window.status_label.setText(tr("settings.language.changed"))
 
     combo.currentIndexChanged.connect(_language_changed)
 
