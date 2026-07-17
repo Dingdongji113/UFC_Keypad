@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 模块化版打包 spec：入口 main.py，自动收集 ufc/ 包
+# Modular build spec: main.py entry point with explicit UFC package imports.
 from pathlib import Path
 
 spec_dir = Path(SPECPATH).resolve()
@@ -19,6 +19,8 @@ a = Analysis(
         'ufc.constants',
         'ufc.crashlog',
         'ufc.config',
+        'ufc.i18n',
+        'ufc.i18n_ui',
         'ufc.fonts',
         'ufc.morse',
         'ufc.colors',
@@ -26,6 +28,7 @@ a = Analysis(
         'ufc.input',
         'ufc.widgets',
         'ufc.startup',
+        'ufc.startup_i18n',
         'ufc.windowing',
         'ufc.ifei_rpm',
         'ufc.realtime_rpm',
