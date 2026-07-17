@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
-"""UFC Keypad 安全模式入口。
+"""UFC Keypad safe-mode entry point.
 
-用途：
-    python main_safe.py
-
-安全模式会尽量跳过容易导致原生崩溃的组件：
-- 不安装启动动画 overlay
-- 不启动 DCS-BIOS 接收线程
-- 不启动 WH_MOUSE_LL 鼠标钩子
-- 不启用原生触控隔离
-
-用于判断 main.py 闪退是否来自 native hook / DCS-BIOS / startup overlay。
+Safe mode avoids components that are most likely to trigger native crashes:
+- no startup overlay
+- no DCS-BIOS receiver thread
+- no WH_MOUSE_LL mouse hook
+- no native touch isolation
 """
 import os
 import sys
@@ -75,7 +70,7 @@ def main():
 
         from PyQt6.QtWidgets import QApplication
 
-        # 先导入底层模块并打补丁，再导入 ui。
+        # Patch low-level services before importing the UI.
         import ufc.input as input_mod
         import ufc.dcs_bios as dcs_mod
         from ufc.ifei_rpm import install_ifei_rpm_fallback
@@ -104,6 +99,7 @@ def main():
 
         from ufc.ui import UFCKeypadWindow, SettingsWindow
         from ufc.windowing import patch_settings_window_apply_screen
+        from ufc.i18n_ui import install_settings_i18n
         from ufc.cold_start import patch_cold_start
         from ufc.cold_direct_entry import install_cold_direct_entry
         from ufc.cold_setup_split import install_split_land_cv_setup
@@ -118,7 +114,9 @@ def main():
         from ufc.light_flash_modes import install_light_flash_modes
         from ufc.cold_prompt_polish import install_cold_prompt_polish
         from ufc.system4 import install_system4
+
         patch_settings_window_apply_screen(SettingsWindow)
+        install_settings_i18n(SettingsWindow)
         patch_cold_start(UFCKeypadWindow)
         install_cold_direct_entry(UFCKeypadWindow)
         install_split_land_cv_setup(UFCKeypadWindow)
