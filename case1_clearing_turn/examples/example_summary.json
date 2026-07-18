@@ -1,0 +1,15 @@
+{
+  "run_id": "example-cat2-normal",
+  "result": "COMPLETED",
+  "exit_reason": "NORMAL_COMPLETE",
+  "catapult_id": 2,
+  "launch_heading_deg": 63.0,
+  "carrier_brc_deg": 63.0,
+  "first_target_heading_deg": 83.0,
+  "duration_s": 12.4,
+  "max_bank_deg": 12.8,
+  "max_roll_command": 0.61,
+  "audio_event": "CLEARING_TURN_COMPLETE",
+  "audio_played": true,
+  "audio_failed": false
+}

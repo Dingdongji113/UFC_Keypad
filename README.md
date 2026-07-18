@@ -166,3 +166,17 @@ continues at about 100 ms intervals until release. The center cell is read-only
 live cockpit telemetry; START stops any repeat and advances immediately. A
 bridge pulse is used only when the primary DCS-BIOS send itself fails, never in
 parallel with a successful primary pulse.
+
+## Standalone Case I clearing turn
+
+The repository also contains an isolated, dependency-free Case I clearing-turn
+controller under `case1_clearing_turn/`. It does not connect to DCS, the UFC UI,
+`Export.lua`, or a real/virtual joystick. Run its deterministic simulator with:
+
+```bash
+python -m case1_clearing_turn.simulator --cat 2 --launch-heading 63 --brc 63 --scenario normal
+python -m unittest discover -s case1_clearing_turn/tests -v
+```
+
+See `case1_clearing_turn/README.md` for architecture, scenarios, configuration,
+logs, audio behavior, and future adapter boundaries.
